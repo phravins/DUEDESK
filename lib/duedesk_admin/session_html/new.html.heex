@@ -1,0 +1,17 @@
+<Layouts.auth flash={@flash}>
+  <p class="text-xs font-semibold uppercase tracking-wide text-base-content/60">
+    DueDesk internal
+  </p>
+  <h1 class="mt-1 mb-6 text-2xl font-semibold tracking-tight">Operator log in</h1>
+  <.form for={@form} id="operator_login_form" action={~p"/admin/log-in"}>
+    <.input field={@form[:email]} type="email" label="Email" autocomplete="username" required />
+    <.input
+      field={@form[:password]}
+      type="password"
+      label="Password"
+      autocomplete="current-password"
+      required
+    />
+    <.button class="btn btn-primary w-full">Log in</.button>
+  </.form>
+</Layouts.auth>
