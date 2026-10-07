@@ -10,60 +10,86 @@ defmodule DueDeskAdmin.AccountsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="min-h-screen bg-base-200">
-      <header class="bg-neutral text-neutral-content">
-        <div class="mx-auto max-w-6xl px-4 sm:px-6 h-14 flex items-center justify-between">
-          <p class="font-semibold">DueDesk Operator Console</p>
-          <div class="flex items-center gap-4 text-sm">
-            <span class="opacity-80">{@current_operator.name}</span>
-            <.link href={~p"/admin/log-out"} method="delete" class="underline">Log out</.link>
+    <div class="min-h-screen bg-white">
+      <header class="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
+        <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+          <div class="flex items-center gap-3">
+            <Layouts.logo class="h-7" />
+            <span class="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-zinc-600">
+              Operator
+            </span>
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <span class="hidden text-muted sm:inline">{@current_operator.name}</span>
+            <.button href={~p"/admin/log-out"} method="delete" variant="secondary" size="sm">
+              <.icon name="hero-arrow-right-start-on-rectangle-mini" class="size-4" /> Log out
+            </.button>
           </div>
         </div>
       </header>
-      <main class="mx-auto max-w-6xl px-4 sm:px-6 py-8">
-        <.page_header title="Customer Accounts">
+
+      <main class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <.page_header eyebrow="Operator" icon="hero-shield-check" title="Customer Accounts">
           <:subtitle>{length(@accounts)} shown</:subtitle>
+          <:actions>
+            <form
+              id="account-search"
+              phx-change="search"
+              phx-submit="search"
+              class="w-full *:mb-0 sm:w-80"
+            >
+              <.input
+                type="search"
+                name="search"
+                value={@search}
+                icon="hero-magnifying-glass"
+                placeholder="Search by account name"
+                phx-debounce="300"
+              />
+            </form>
+          </:actions>
         </.page_header>
 
-        <form id="account-search" phx-change="search" phx-submit="search" class="mb-4 max-w-sm">
-          <input
-            type="search"
-            name="search"
-            value={@search}
-            placeholder="Search by account name"
-            phx-debounce="300"
-            class="input w-full"
-          />
-        </form>
-
-        <div class="overflow-x-auto rounded-2xl bg-base-100 border border-base-300">
-          <table class="table" id="accounts">
-            <thead>
-              <tr>
-                <th>Account</th>
-                <th>Plan</th>
-                <th>Status</th>
-                <th>Members</th>
-                <th>Storage</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={%{account: a, member_count: n} <- @accounts} id={"account-#{a.id}"}>
-                <td class="font-medium">{a.name}</td>
-                <td>{Plans.get(a.plan_code).name}</td>
-                <td>{String.capitalize(a.status)}</td>
-                <td>{n}</td>
-                <td>{Plans.format_bytes(a.storage_used_bytes)}</td>
-                <td>{date(a.inserted_at)}</td>
-              </tr>
-              <tr :if={@accounts == []}>
-                <td colspan="6" class="text-center text-base-content/60 py-8">
-                  No accounts found.
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="overflow-hidden rounded-lg border border-line bg-white">
+          <div class="overflow-x-auto">
+            <table id="accounts" class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-line bg-[#fafaf9] text-xs text-muted">
+                  <th class="px-5 py-3 font-medium">Account</th>
+                  <th class="px-5 py-3 font-medium">Plan</th>
+                  <th class="px-5 py-3 font-medium">Status</th>
+                  <th class="px-5 py-3 font-medium">Members</th>
+                  <th class="px-5 py-3 font-medium">Storage</th>
+                  <th class="px-5 py-3 font-medium">Created</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-line">
+                <tr
+                  :for={%{account: a, member_count: n} <- @accounts}
+                  id={"account-#{a.id}"}
+                  class="transition hover:bg-[#fafaf9]"
+                >
+                  <td class="px-5 py-3 font-medium text-ink">{a.name}</td>
+                  <td class="px-5 py-3">
+                    <span class="rounded-full border border-line px-2 py-0.5 text-xs font-medium text-zinc-700">
+                      {Plans.get(a.plan_code).name}
+                    </span>
+                  </td>
+                  <td class="px-5 py-3 text-zinc-600">{String.capitalize(a.status)}</td>
+                  <td class="px-5 py-3 tabular-nums text-zinc-600">{n}</td>
+                  <td class="px-5 py-3 tabular-nums text-zinc-600">
+                    {Plans.format_bytes(a.storage_used_bytes)}
+                  </td>
+                  <td class="px-5 py-3 text-zinc-500">{date(a.inserted_at)}</td>
+                </tr>
+                <tr :if={@accounts == []}>
+                  <td colspan="6" class="px-6 py-14 text-center text-zinc-500">
+                    No accounts found.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </main>
     </div>

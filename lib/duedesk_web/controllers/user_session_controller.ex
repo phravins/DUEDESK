@@ -8,7 +8,6 @@ defmodule DueDeskWeb.UserSessionController do
     create(conn, user_params, "Welcome back!")
   end
 
-  # email + password login
   defp create(conn, %{"email" => email, "password" => password} = user_params, info) do
     case Accounts.get_user_by_email_and_password(email, password) do
       %{confirmed_at: nil} = user ->
@@ -41,7 +40,6 @@ defmodule DueDeskWeb.UserSessionController do
     true = Accounts.sudo_mode?(user)
     {:ok, {_user, expired_tokens}} = Accounts.update_user_password(user, user_params)
 
-    # disconnect all existing LiveViews with old sessions
     UserAuth.disconnect_sessions(expired_tokens)
 
     conn

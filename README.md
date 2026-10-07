@@ -4,14 +4,27 @@ DueDesk tracks business obligations, renewals and documents so they are
 handled before they become overdue. Built by OSWORKS for REALSME Solutions
 Pvt Ltd (duedesk.in).
 
-Phoenix 1.8 · LiveView · PostgreSQL · Tailwind/daisyUI.
+Phoenix 1.8 · LiveView · PostgreSQL · Tailwind CSS.
 
 ## Local development
 
-Requirements: Elixir 1.18 / OTP 27, Docker.
+Requirements: Elixir 1.18 / OTP 27 and a local PostgreSQL server.
+
+Dev and test connect to Postgres on `localhost:5432` and use the databases
+`duedesk_dev` and `duedesk_test`. Set these if your server differs:
+
+| Variable | Default |
+|---|---|
+| `DB_HOST` | `localhost` |
+| `DB_PORT` | `5432` |
+| `DB_USERNAME` | `postgres` |
+| `DB_PASSWORD` | `postgres` |
+
+The role needs `CREATEDB` so `mix setup` can create the databases, e.g.
+`sudo -u postgres createuser --createdb --pwprompt duedesk`, then
+`export DB_USERNAME=duedesk DB_PASSWORD=...` in your shell profile.
 
 ```sh
-docker compose up -d        # Postgres on :5435, MinIO on :9000 (console :9001)
 mix setup                   # deps, database, seeds, assets
 mix phx.server              # http://localhost:4000
 ```
@@ -23,7 +36,6 @@ passwords once. Re-run with `mix ecto.reset`.
 - Sent emails (confirmation, password reset) appear at <http://localhost:4000/dev/mailbox>.
 - Operator console: <http://localhost:4000/admin>. Create an operator with
   `mix duedesk.create_operator EMAIL "NAME"`.
-- Set `DB_PORT` to use a different Postgres port.
 
 ## Checks
 
@@ -51,5 +63,6 @@ permission check goes through `DueDesk.Permissions`; dates display as
 
 ## Deployment
 
-`Dockerfile` builds a release. Required environment variables are listed in
-`.env.example`. Run migrations with `bin/migrate` before `bin/server`.
+`MIX_ENV=prod mix release` builds a release. Required environment variables
+are listed in `.env.example`. Run migrations with `bin/migrate` before
+`bin/server`.

@@ -21,9 +21,14 @@ defmodule DueDeskWeb.PlaceholderLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active={@section.nav}>
-      <.page_header title={@section.title} />
-      <.empty_state icon="hero-wrench-screwdriver" title="Coming soon">
-        This part of DueDesk is being built (phase {@section.phase}).
+      <.page_header eyebrow="DueDesk" title={@section.title} />
+      <.empty_state id="coming-soon" icon="hero-wrench-screwdriver" title="Coming soon">
+        This part of DueDesk is being built and arrives in phase {@section.phase}.
+        <:action>
+          <.button variant="secondary" navigate={~p"/dashboard"}>
+            <.icon name="hero-arrow-left-mini" class="size-4" /> Back to dashboard
+          </.button>
+        </:action>
       </.empty_state>
     </Layouts.app>
     """

@@ -7,32 +7,35 @@ defmodule DueDeskWeb.UserLive.ForgotPassword do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} current_scope={@current_scope}>
-      <div class="mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">Reset your password</h1>
-        <p class="mt-1 text-sm text-base-content/70">
-          Enter your email and we'll send you a link to choose a new password.
-        </p>
-      </div>
+      <:header_action>
+        Remembered it?
+        <.link navigate={~p"/users/log-in"} class="font-medium text-brand hover:underline">
+          Log in
+        </.link>
+      </:header_action>
+
+      <.auth_heading title="Forgot your password?" tagline="We'll email you a link.">
+        Enter the email you use for DueDesk and we will send you a link to choose a new one.
+      </.auth_heading>
 
       <.form for={@form} id="reset_password_form" phx-submit="send_email">
         <.input
           field={@form[:email]}
           type="email"
           label="Email"
+          placeholder="name@company.in"
           autocomplete="username"
           required
           phx-mounted={JS.focus()}
         />
-        <.button phx-disable-with="Sending..." class="btn btn-primary w-full">
+        <.button size="lg" class="mt-2 w-full" phx-disable-with="Sending...">
           Send reset link
         </.button>
       </.form>
 
-      <p class="mt-6 text-center text-sm">
-        <.link navigate={~p"/users/log-in"} class="text-primary hover:underline">
-          Back to log in
-        </.link>
-      </p>
+      <.button navigate={~p"/users/log-in"} variant="outline" size="lg" class="mt-3 w-full">
+        Back to log in
+      </.button>
     </Layouts.auth>
     """
   end

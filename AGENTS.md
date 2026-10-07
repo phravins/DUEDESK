@@ -8,7 +8,7 @@ This is a web application written using the Phoenix web framework.
 - Write an audit event (`DueDesk.Audit.multi_log/6`) in the same transaction as every important change. Never put passwords, tokens, secrets or document contents in audit rows or logs.
 - "Today" is `DueDesk.Tenancy.today(scope)` (account timezone). Display dates with `DueDeskWeb.Format.date/1` (`15 Mar 2027`).
 - Never commit secrets; production config comes from environment variables (see `.env.example`).
-- Local Postgres runs on port 5435 (`docker compose up -d`).
+- Local Postgres runs natively on port 5432; dev/test read `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` (see README).
 
 ## Project guidelines
 

@@ -3,136 +3,259 @@ defmodule DueDeskWeb.DashboardLive do
   The landing page after log in (UX spec §11–§14). Super Admins and
   Administrators see account-wide status; Users see only their own work.
 
-  Counts are wired to real DueItems in Phase 2.
+  Counts and the timeline are wired to real DueItems in Phase 2.
   """
   use DueDeskWeb, :live_view
 
-  alias DueDesk.Permissions
   alias DueDesk.Billing.Plans
+  alias DueDesk.Permissions
+  alias DueDesk.Tenancy
+
+  @timeline_days 30
+  @dots_per_day 6
+
+  @reminder_schedule [
+    {"90 days before", "First heads-up"},
+    {"30 days before", "Time to prepare"},
+    {"7 days before", "Final reminder"},
+    {"On the due date", "Action due today"},
+    {"1 day after", "Escalated to Admins"}
+  ]
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope} active={:dashboard}>
-      <.page_header title={"Hello, #{first_name(@current_scope.user.name)}"}>
-        <:subtitle>Here is what needs attention today, {date(@today)}.</:subtitle>
+      <.page_header
+        eyebrow="Dashboard"
+        icon="hero-squares-2x2"
+        title={if @admin?, do: "Overview", else: "My work"}
+      >
+        <:subtitle>
+          Hello, {first_name(@current_scope.user.name)}. {if @admin?,
+            do: "Everything your account must renew, file or complete, in one place.",
+            else: "The DueItems you are responsible for, and what needs attention next."}
+        </:subtitle>
         <:actions>
-          <.link navigate={~p"/due-items/new"} class="btn btn-primary">
+          <.pill icon="hero-calendar-days">{Calendar.strftime(@today, "%a")}, {date(@today)}</.pill>
+          <.button variant="secondary" navigate={~p"/due-items"}>View DueItems</.button>
+          <.button navigate={~p"/due-items/new"}>
             <.icon name="hero-plus" class="size-4" /> Create DueItem
-          </.link>
+          </.button>
         </:actions>
       </.page_header>
 
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <.summary_card
+      <div class={[
+        "mb-4 grid gap-4 sm:grid-cols-2",
+        if(@admin?, do: "xl:grid-cols-4", else: "xl:grid-cols-3")
+      ]}>
+        <.stat_card
           id="card-overdue"
           label={if @admin?, do: "Overdue", else: "My Overdue"}
           count={@counts.overdue}
           status={:overdue}
+          hint="Past the due date"
           navigate={~p"/due-items?status=overdue"}
         />
-        <.summary_card
+        <.stat_card
           id="card-due-soon"
           label={if @admin?, do: "Due Soon", else: "My Due Soon"}
           count={@counts.due_soon}
           status={:due_soon}
+          hint={"Within #{@current_scope.customer_account.due_soon_days} days"}
           navigate={~p"/due-items?status=due_soon"}
         />
-        <.summary_card
+        <.stat_card
           :if={@admin?}
           id="card-unassigned"
           label="Unassigned"
           count={@counts.unassigned}
           status={:unassigned}
+          hint="No one responsible"
           navigate={~p"/due-items?assignment=unassigned"}
         />
-        <.summary_card
+        <.stat_card
           id="card-up-to-date"
           label={if @admin?, do: "Up to Date", else: "My Up to Date"}
           count={@counts.up_to_date}
           status={:up_to_date}
+          hint="Nothing to do yet"
           navigate={~p"/due-items?status=up_to_date"}
         />
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-3">
-        <div class="lg:col-span-2">
-          <.empty_state
+      <div class="grid gap-4 lg:grid-cols-3">
+        <div class="space-y-4 lg:col-span-2">
+          <.card
+            id="due-timeline"
+            title={if @admin?, do: "Due in the next 30 days", else: "My next 30 days"}
+          >
+            <:subtitle>Each column is a day; each dot is a DueItem whose action is due.</:subtitle>
+            <:action>
+              <.round_link
+                navigate={~p"/due-items?status=due_soon"}
+                label="View DueItems due soon"
+              />
+            </:action>
+            <div class="flex items-end gap-6">
+              <div class="shrink-0">
+                <p class="text-[40px] font-medium leading-none tracking-[-0.04em] tabular-nums">
+                  {Enum.sum_by(@timeline, & &1.count)}
+                </p>
+                <p class="mt-2 text-xs text-zinc-500">DueItems</p>
+              </div>
+              <div class="min-w-0 flex-1 overflow-x-auto">
+                <div class="flex min-w-105 items-end justify-between gap-1">
+                  <div
+                    :for={{day, index} <- Enum.with_index(@timeline)}
+                    class="flex flex-col items-center gap-1"
+                    title={"#{date(day.date)}: #{day.count}"}
+                  >
+                    <span
+                      :for={level <- (@dots_per_day - 1)..0//-1}
+                      class={[
+                        "size-1.5 rounded-full sm:size-2",
+                        cond do
+                          level < day.count -> "bg-navy"
+                          index == 0 -> "bg-brand/30"
+                          true -> "bg-[#ececea]"
+                        end
+                      ]}
+                    />
+                  </div>
+                </div>
+                <div class="mt-3 flex min-w-105 justify-between text-[11px] text-zinc-400">
+                  <span class="font-medium text-brand">Today</span>
+                  <span>{date(Date.add(@today, 15))}</span>
+                  <span>{date(Date.add(@today, @timeline_days - 1))}</span>
+                </div>
+              </div>
+            </div>
+          </.card>
+
+          <.card
             id="welcome"
-            icon="hero-sparkles"
             title={if @admin?, do: "Welcome to DueDesk", else: "No DueItems assigned to you yet"}
           >
-            <%= if @admin? do %>
-              Add the renewals, licences, registrations and contracts your business must not miss.
-              DueDesk will remind the right people before they become overdue.
-            <% else %>
-              DueItems you are responsible for will appear here. You can also add one yourself.
-            <% end %>
-            <:action>
-              <.link navigate={~p"/due-items/new"} class="btn btn-primary">
-                <.icon name="hero-plus" class="size-4" /> Create DueItem
+            <:subtitle>
+              <%= if @admin? do %>
+                Add the renewals, licences, registrations and contracts your business must not
+                miss. DueDesk reminds the right people before they become overdue.
+              <% else %>
+                DueItems you are responsible for will appear here. You can also add one yourself.
+              <% end %>
+            </:subtitle>
+            <ol :if={@admin?} class="divide-y divide-line rounded-md border border-line">
+              <.setup_step number={1} title="Add an Organisation" navigate={~p"/organisations"} />
+              <.setup_step number={2} title="Create a DueItem" navigate={~p"/due-items/new"} />
+              <.setup_step number={3} title="Invite your team" navigate={~p"/users"} />
+            </ol>
+            <.button :if={!@admin?} navigate={~p"/due-items/new"}>
+              <.icon name="hero-plus" class="size-4" /> Create DueItem
+            </.button>
+            <:footer>
+              <.link
+                navigate={~p"/support"}
+                class="inline-flex items-center gap-1.5 font-medium text-violet-600 hover:text-violet-700"
+              >
+                <.icon name="hero-lifebuoy-mini" class="size-4" /> Get help setting up
               </.link>
-            </:action>
-          </.empty_state>
+            </:footer>
+          </.card>
         </div>
 
-        <aside
-          :if={@super_admin?}
-          id="capacity"
-          class="rounded-2xl bg-base-100 border border-base-300 p-5 h-fit"
-        >
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="font-semibold">Capacity</h2>
-            <span class="text-xs font-medium rounded-full bg-primary/10 text-primary px-2 py-0.5">
-              {@plan.name} plan
-            </span>
-          </div>
-          <dl class="space-y-3 text-sm">
-            <.capacity_row label="Organisations" used={0} limit={@plan.max_organisations} />
-            <.capacity_row label="DueItems" used={0} limit={@plan.max_due_items} />
-            <.capacity_row label="Admins & Users" used={0} limit={@plan.max_members} />
-            <div class="flex justify-between">
-              <dt class="text-base-content/70">Storage</dt>
-              <dd class="tabular-nums">
-                {Plans.format_bytes(@current_scope.customer_account.storage_used_bytes)} of {Plans.format_bytes(
-                  @plan.storage_bytes
-                )}
-              </dd>
+        <div class="space-y-4">
+          <.card :if={@super_admin?} id="capacity" title="Capacity">
+            <:subtitle>Usage against your plan limits.</:subtitle>
+            <:action>
+              <span class="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-zinc-600">
+                {@plan.name} plan
+              </span>
+            </:action>
+            <div class="space-y-5">
+              <.meter label="Organisations" used={0} limit={@plan.max_organisations} />
+              <.meter label="DueItems" used={0} limit={@plan.max_due_items} />
+              <.meter label="Admins & Users" used={@member_count} limit={@plan.max_members} />
+              <.meter
+                label="Storage"
+                used={@current_scope.customer_account.storage_used_bytes}
+                limit={@plan.storage_bytes}
+                display={"#{Plans.format_bytes(@current_scope.customer_account.storage_used_bytes)} of #{Plans.format_bytes(@plan.storage_bytes)}"}
+              />
             </div>
-          </dl>
-        </aside>
+          </.card>
+
+          <.card id="reminder-schedule" title="Reminder schedule">
+            <:subtitle>Default reminders for every new DueItem.</:subtitle>
+            <div class="relative">
+              <span class="absolute bottom-2 left-1.75 top-2 w-px bg-line" />
+              <ol class="space-y-4 pl-6">
+                <li :for={{when_label, note} <- @reminder_schedule} class="relative">
+                  <span class="absolute -left-6 top-1 flex size-3.75 items-center justify-center rounded-full bg-white ring-1 ring-zinc-300">
+                    <span class="size-1.5 rounded-full bg-navy" />
+                  </span>
+                  <p class="text-sm font-medium text-ink">{when_label}</p>
+                  <p class="text-xs text-muted">{note}</p>
+                </li>
+              </ol>
+            </div>
+          </.card>
+        </div>
       </div>
     </Layouts.app>
     """
   end
 
-  attr :label, :string, required: true
-  attr :used, :integer, required: true
-  attr :limit, :any, required: true
+  attr :number, :integer, required: true
+  attr :title, :string, required: true
+  attr :navigate, :string, required: true
 
-  defp capacity_row(assigns) do
+  defp setup_step(assigns) do
     ~H"""
-    <div class="flex justify-between">
-      <dt class="text-base-content/70">{@label}</dt>
-      <dd class="tabular-nums">
-        {@used} of {if @limit == :unlimited, do: "Unlimited", else: @limit}
-      </dd>
-    </div>
+    <li>
+      <.link
+        navigate={@navigate}
+        class="group flex items-center gap-3 px-4 py-3 transition hover:bg-[#fafaf9]"
+      >
+        <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#efefed] text-xs font-semibold text-zinc-600">
+          {@number}
+        </span>
+        <span class="min-w-0 flex-1 text-sm font-medium text-ink">{@title}</span>
+        <.icon
+          name="hero-arrow-right-mini"
+          class="size-4 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-ink"
+        />
+      </.link>
+    </li>
     """
   end
 
   @impl true
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
+    today = Tenancy.today(scope)
+    super_admin? = Permissions.super_admin?(scope)
 
     {:ok,
      socket
      |> assign(:page_title, "Dashboard")
-     |> assign(:today, DueDesk.Tenancy.today(scope))
+     |> assign(:today, today)
      |> assign(:admin?, Permissions.admin?(scope))
-     |> assign(:super_admin?, Permissions.super_admin?(scope))
+     |> assign(:super_admin?, super_admin?)
      |> assign(:plan, Plans.get(scope.customer_account.plan_code))
-     |> assign(:counts, %{overdue: 0, due_soon: 0, unassigned: 0, up_to_date: 0})}
+     |> assign(
+       :member_count,
+       if(super_admin?, do: length(Tenancy.list_memberships(scope)), else: 0)
+     )
+     |> assign(:counts, %{overdue: 0, due_soon: 0, unassigned: 0, up_to_date: 0})
+     |> assign(:timeline, empty_timeline(today))
+     |> assign(:timeline_days, @timeline_days)
+     |> assign(:dots_per_day, @dots_per_day)
+     |> assign(:reminder_schedule, @reminder_schedule)}
+  end
+
+  defp empty_timeline(today) do
+    for offset <- 0..(@timeline_days - 1), do: %{date: Date.add(today, offset), count: 0}
   end
 
   defp first_name(name), do: name |> String.split() |> List.first()

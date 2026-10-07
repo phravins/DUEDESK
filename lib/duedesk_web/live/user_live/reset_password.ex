@@ -8,12 +8,10 @@ defmodule DueDeskWeb.UserLive.ResetPassword do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} current_scope={@current_scope}>
-      <div class="mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">Choose a new password</h1>
-        <p class="mt-1 text-sm text-base-content/70">
-          For {@user.email}. You will be logged out of every device.
-        </p>
-      </div>
+      <.auth_heading title="Choose a new password" tagline="Keep it hard to guess.">
+        For <span class="font-medium text-ink">{@user.email}</span>.
+        You will be logged out of every device.
+      </.auth_heading>
 
       <.form
         for={@form}
@@ -25,6 +23,7 @@ defmodule DueDeskWeb.UserLive.ResetPassword do
           field={@form[:password]}
           type="password"
           label="New password"
+          placeholder="At least 10 characters"
           autocomplete="new-password"
           required
           phx-mounted={JS.focus()}
@@ -33,10 +32,11 @@ defmodule DueDeskWeb.UserLive.ResetPassword do
           field={@form[:password_confirmation]}
           type="password"
           label="Confirm new password"
+          placeholder="Type it again"
           autocomplete="new-password"
           required
         />
-        <.button phx-disable-with="Saving..." class="btn btn-primary w-full">
+        <.button size="lg" class="mt-2 w-full" phx-disable-with="Saving...">
           Save new password
         </.button>
       </.form>

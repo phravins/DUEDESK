@@ -11,28 +11,16 @@ defmodule DueDeskWeb.OnboardingLive.Account do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} current_scope={@current_scope} wide>
-      <ol
-        class="flex items-center gap-2 text-xs font-medium text-base-content/60 mb-6"
-        aria-label="Setup progress"
-      >
-        <li class="flex items-center gap-1 text-success">
-          <.icon name="hero-check-circle-mini" class="size-4" /> Sign up
-        </li>
-        <li aria-hidden="true">›</li>
-        <li class="flex items-center gap-1 text-success">
-          <.icon name="hero-check-circle-mini" class="size-4" /> Verify email
-        </li>
-        <li aria-hidden="true">›</li>
-        <li class="text-primary" aria-current="step">Account setup</li>
-        <li aria-hidden="true">›</li>
-        <li>First Organisation</li>
+      <ol class="mb-10 flex items-center gap-2 text-xs font-medium" aria-label="Setup progress">
+        <.step state={:done}>Sign up</.step>
+        <.step state={:done}>Verify email</.step>
+        <.step state={:current}>Account</.step>
+        <.step state={:next}>First Organisation</.step>
       </ol>
 
-      <h1 class="text-2xl font-semibold tracking-tight">Set up your DueDesk account</h1>
-      <p class="mt-1 mb-6 text-sm text-base-content/70">
+      <.auth_heading title="Set up your DueDesk account" tagline="You'll be its Super Admin.">
         Your account holds your Organisations, DueItems, documents and team.
-        You will be its Super Admin.
-      </p>
+      </.auth_heading>
 
       <.form for={@form} id="account_setup_form" phx-change="validate" phx-submit="save">
         <.input
@@ -49,21 +37,38 @@ defmodule DueDeskWeb.OnboardingLive.Account do
           label="Mobile number for reminders"
           required
         />
-        <div class="rounded-xl bg-base-200 p-4 mb-6 text-sm">
+        <div class="mb-6 rounded-md border border-line p-3.5 *:mb-0">
           <.input
             field={@form[:whatsapp_consent]}
             type="checkbox"
             label="Send me DueDesk reminders on WhatsApp"
           />
-          <p class="text-xs text-base-content/60 -mt-1">
+          <p class="mt-1 pl-6.5 text-xs text-muted">
             Optional. Reminders always go by email; you can change this later in Account settings.
           </p>
         </div>
-        <.button phx-disable-with="Setting up..." class="btn btn-primary w-full">
+        <.button size="lg" class="w-full" phx-disable-with="Setting up...">
           Continue
         </.button>
       </.form>
     </Layouts.auth>
+    """
+  end
+
+  attr :state, :atom, required: true, values: [:done, :current, :next]
+  slot :inner_block, required: true
+
+  defp step(assigns) do
+    ~H"""
+    <li class="flex min-w-0 flex-1 flex-col gap-2" aria-current={@state == :current && "step"}>
+      <span class={[
+        "h-1 rounded-full",
+        if(@state == :next, do: "bg-[#ececea]", else: "bg-navy")
+      ]} />
+      <span class={["truncate", if(@state == :next, do: "text-zinc-400", else: "text-ink")]}>
+        {render_slot(@inner_block)}
+      </span>
+    </li>
     """
   end
 

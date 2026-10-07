@@ -23,7 +23,6 @@ defmodule DueDeskWeb do
     quote do
       use Phoenix.Router, helpers: false
 
-      # Import common connection and controller functions to use in pipelines
       import Plug.Conn
       import Phoenix.Controller
       import Phoenix.LiveView.Router
@@ -68,32 +67,25 @@ defmodule DueDeskWeb do
     quote do
       use Phoenix.Component
 
-      # Import convenience functions from controllers
       import Phoenix.Controller,
         only: [get_csrf_token: 0, view_module: 1, view_template: 1]
 
-      # Include general helpers for rendering HTML
       unquote(html_helpers())
     end
   end
 
   defp html_helpers do
     quote do
-      # Translation
       use Gettext, backend: DueDeskWeb.Gettext
 
-      # HTML escaping functionality
       import Phoenix.HTML
-      # Core UI components
       import DueDeskWeb.CoreComponents
       import DueDeskWeb.UIComponents
       import DueDeskWeb.Format
 
-      # Common modules used in templates
       alias Phoenix.LiveView.JS
       alias DueDeskWeb.Layouts
 
-      # Routes generation with the ~p sigil
       unquote(verified_routes())
     end
   end

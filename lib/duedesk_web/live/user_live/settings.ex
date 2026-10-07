@@ -8,28 +8,33 @@ defmodule DueDeskWeb.UserLive.Settings do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <.page_header title="My profile">
+    <Layouts.app flash={@flash} current_scope={@current_scope} active={:profile}>
+      <.page_header eyebrow="Settings" icon="hero-cog-6-tooth" title="My profile">
         <:subtitle>Your name, mobile number, email and password.</:subtitle>
       </.page_header>
 
-      <div class="grid gap-6 max-w-2xl">
-        <section class="rounded-2xl bg-base-100 border border-base-300 p-6">
-          <h2 class="font-semibold mb-4">Profile</h2>
+      <div class="grid gap-4 lg:grid-cols-3">
+        <.card id="profile" title="Profile">
+          <:subtitle>How your team sees you.</:subtitle>
           <.form for={@profile_form} id="profile_form" phx-submit="update_profile">
-            <.input field={@profile_form[:name]} type="text" label="Name" required />
+            <.input
+              field={@profile_form[:name]}
+              type="text"
+              label="Name"
+              required
+            />
             <.input
               field={@profile_form[:mobile_number]}
               type="tel"
               label="Mobile number"
               required
             />
-            <.button variant="primary" phx-disable-with="Saving...">Save profile</.button>
+            <.button class="mt-2" phx-disable-with="Saving...">Save profile</.button>
           </.form>
-        </section>
+        </.card>
 
-        <section class="rounded-2xl bg-base-100 border border-base-300 p-6">
-          <h2 class="font-semibold mb-4">Email</h2>
+        <.card id="email" title="Email">
+          <:subtitle>We will send a confirmation link to the new address.</:subtitle>
           <.form
             for={@email_form}
             id="email_form"
@@ -44,12 +49,12 @@ defmodule DueDeskWeb.UserLive.Settings do
               spellcheck="false"
               required
             />
-            <.button variant="primary" phx-disable-with="Changing...">Change email</.button>
+            <.button class="mt-2" phx-disable-with="Changing...">Change email</.button>
           </.form>
-        </section>
+        </.card>
 
-        <section class="rounded-2xl bg-base-100 border border-base-300 p-6">
-          <h2 class="font-semibold mb-4">Password</h2>
+        <.card id="password" title="Password">
+          <:subtitle>You will stay logged in on this device only.</:subtitle>
           <.form
             for={@password_form}
             id="password_form"
@@ -81,11 +86,9 @@ defmodule DueDeskWeb.UserLive.Settings do
               autocomplete="new-password"
               spellcheck="false"
             />
-            <.button variant="primary" phx-disable-with="Saving...">
-              Save password
-            </.button>
+            <.button class="mt-2" phx-disable-with="Saving...">Save password</.button>
           </.form>
-        </section>
+        </.card>
       </div>
     </Layouts.app>
     """

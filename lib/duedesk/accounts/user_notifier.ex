@@ -3,7 +3,6 @@ defmodule DueDesk.Accounts.UserNotifier do
 
   alias DueDesk.Mailer
 
-  # Delivers the email using the application mailer.
   defp deliver(recipient, subject, body) do
     email =
       new()

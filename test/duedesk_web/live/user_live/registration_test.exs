@@ -42,11 +42,10 @@ defmodule DueDeskWeb.UserLive.RegistrationTest do
       email = unique_user_email()
       form = form(lv, "#registration_form", user: valid_user_attributes(email: email))
 
-      {:ok, _lv, html} =
-        render_submit(form)
-        |> follow_redirect(conn, ~p"/users/log-in")
+      render_submit(form)
 
-      assert html =~ "We have sent a confirmation link to #{email}"
+      assert has_element?(lv, "#check-email", email)
+      refute has_element?(lv, "#registration_form")
 
       user = DueDesk.Accounts.get_user_by_email(email)
       assert user.mobile_number == "+919876543210"

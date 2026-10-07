@@ -5,28 +5,22 @@ defmodule DueDeskWeb.UserLive.Login do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} current_scope={@current_scope}>
-      <div class="mb-6">
-        <h1 class="text-2xl font-semibold tracking-tight">
-          {if @current_scope, do: "Confirm it's you", else: "Log in to DueDesk"}
-        </h1>
-        <p class="mt-1 text-sm text-base-content/70">
-          <%= if @current_scope do %>
-            Enter your password again to continue with this sensitive action.
-          <% else %>
-            New to DueDesk?
-            <.link navigate={~p"/users/register"} class="font-medium text-primary hover:underline">
-              Create an account
-            </.link>
-          <% end %>
-        </p>
-      </div>
+      <:header_action :if={!@current_scope}>
+        New to DueDesk?
+        <.link navigate={~p"/users/register"} class="font-medium text-brand hover:underline">
+          Sign up
+        </.link>
+      </:header_action>
 
-      <div :if={local_mail_adapter?()} class="alert alert-info mb-4 text-sm">
-        <.icon name="hero-information-circle" class="size-5 shrink-0" />
-        <p>
-          Development mode: emails appear in <.link href="/dev/mailbox" class="underline">the local mailbox</.link>.
-        </p>
-      </div>
+      <%= if @current_scope do %>
+        <.auth_heading title="Confirm it's you." tagline="Enter your password again.">
+          This keeps sensitive changes to your account safe.
+        </.auth_heading>
+      <% else %>
+        <.auth_heading title="Know what is due." tagline="Log in to DueDesk." />
+      <% end %>
+
+      <.dev_mailbox_notice />
 
       <.form
         :let={f}
@@ -41,39 +35,60 @@ defmodule DueDeskWeb.UserLive.Login do
           field={f[:email]}
           type="email"
           label="Email"
+          placeholder="name@company.in"
           autocomplete="username"
           spellcheck="false"
           required
           phx-mounted={!@current_scope && JS.focus()}
         />
-        <.input
-          field={@form[:password]}
-          type="password"
-          label="Password"
-          autocomplete="current-password"
-          required
-          phx-mounted={@current_scope && JS.focus()}
-        />
-        <div class="flex items-center justify-between mb-4 text-sm">
-          <label :if={!@current_scope} class="flex items-center gap-2">
-            <input
-              type="checkbox"
-              name={@form[:remember_me].name}
-              value="true"
-              class="checkbox checkbox-sm"
-            /> Keep me logged in
-          </label>
-          <.link
-            navigate={~p"/users/reset-password"}
-            class="text-primary hover:underline ml-auto"
-          >
-            Forgot password?
-          </.link>
+        <div class="mb-6">
+          <.input
+            field={@form[:password]}
+            type="password"
+            label="Password"
+            placeholder="Enter password"
+            autocomplete="current-password"
+            required
+            phx-mounted={@current_scope && JS.focus()}
+          />
+          <div class="-mt-2.5 flex items-center justify-between gap-3 text-[13px]">
+            <label
+              :if={!@current_scope}
+              class="inline-flex cursor-pointer items-center gap-2 text-zinc-600"
+            >
+              <input
+                type="checkbox"
+                name={@form[:remember_me].name}
+                value="true"
+                class="size-3.5 rounded border-zinc-300 accent-navy"
+              /> Keep me logged in
+            </label>
+            <.link
+              navigate={~p"/users/reset-password"}
+              class="ml-auto font-medium text-brand hover:underline"
+            >
+              Forgot password?
+            </.link>
+          </div>
         </div>
-        <.button class="btn btn-primary w-full" phx-disable-with="Logging in...">
-          Log in
+        <.button size="lg" class="w-full" phx-disable-with="Logging in...">
+          Continue
         </.button>
       </.form>
+
+      <.button
+        :if={!@current_scope}
+        navigate={~p"/users/register"}
+        variant="outline"
+        size="lg"
+        class="mt-3 w-full"
+      >
+        Create an account
+      </.button>
+
+      <p :if={!@current_scope} class="mt-8 text-xs leading-relaxed text-zinc-400">
+        By continuing, you agree to the DueDesk terms of service and privacy policy.
+      </p>
     </Layouts.auth>
     """
   end
@@ -92,9 +107,5 @@ defmodule DueDeskWeb.UserLive.Login do
   @impl true
   def handle_event("submit", %{"user" => params}, socket) do
     {:noreply, assign(socket, form: to_form(params, as: "user"), trigger_submit: true)}
-  end
-
-  defp local_mail_adapter? do
-    Application.get_env(:duedesk, DueDesk.Mailer)[:adapter] == Swoosh.Adapters.Local
   end
 end

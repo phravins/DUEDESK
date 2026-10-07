@@ -2,9 +2,8 @@ defmodule DueDeskWeb.Layouts do
   @moduledoc """
   Layouts for DueDesk.
 
-    * `public/1` — marketing pages (home, pricing)
-    * `auth/1` — sign up, log in, onboarding: a centred card
-    * `app/1` — the signed-in shell: sidebar, top bar and mobile navigation
+    * `auth/1` — sign up, log in, password reset and onboarding
+    * `app/1` — the signed-in shell with the sidebar
   """
   use DueDeskWeb, :html
 
@@ -21,83 +20,68 @@ defmodule DueDeskWeb.Layouts do
 
   def logo(assigns) do
     ~H"""
-    <span class={["inline-flex items-center gap-2 font-semibold tracking-tight", @class]}>
+    <span class={["inline-flex items-center gap-2.5 font-semibold tracking-[-0.02em]", @class]}>
       <svg viewBox="0 0 32 32" class="h-full w-auto" aria-hidden="true">
-        <rect x="2" y="5" width="28" height="25" rx="6" class="fill-primary" />
-        <rect x="8" y="2" width="3" height="7" rx="1.5" class="fill-primary" />
-        <rect x="21" y="2" width="3" height="7" rx="1.5" class="fill-primary" />
+        <rect x="1" y="1" width="30" height="30" rx="10" class="fill-ink" />
         <path
-          d="M10 18.5l4 4 8-8.5"
+          d="M9.5 16.5l4.5 4.5 8.5-9"
           fill="none"
-          stroke="white"
           stroke-width="3"
           stroke-linecap="round"
           stroke-linejoin="round"
+          class="stroke-white"
         />
+        <circle cx="24.5" cy="7.5" r="3" class="fill-brand" />
       </svg>
-      <span class="text-lg">DueDesk</span>
+      <span class="text-xl text-ink">DueDesk</span>
     </span>
     """
   end
 
   @doc """
-  Layout for public marketing pages.
+  Layout for sign up, log in, password reset and onboarding: a plain white
+  page with the logo top-left and a narrow centred form.
   """
   attr :flash, :map, required: true
   attr :current_scope, :map, default: nil
+  attr :wide, :boolean, default: false
+  slot :header_action, doc: "the prompt at the top right, e.g. a link to sign up"
   slot :inner_block, required: true
 
-  def public(assigns) do
+  def auth(assigns) do
     ~H"""
-    <div class="min-h-screen flex flex-col bg-base-100">
-      <header class="border-b border-base-300/70">
-        <nav class="mx-auto max-w-6xl flex items-center justify-between gap-4 px-4 sm:px-6 h-16">
-          <.link navigate={~p"/"}><.logo class="h-8" /></.link>
-          <div class="flex items-center gap-1 sm:gap-2 text-sm">
-            <.link
-              navigate={~p"/"}
-              class="hidden sm:inline-flex px-3 py-2 rounded-lg hover:bg-base-200"
-            >
-              Product
-            </.link>
-            <.link navigate={~p"/pricing"} class="px-3 py-2 rounded-lg hover:bg-base-200">
-              Pricing
-            </.link>
-            <%= if @current_scope && @current_scope.user do %>
+    <div class="auth-shell flex min-h-screen flex-col bg-white">
+      <header class="flex h-16 items-center justify-between gap-4 px-5 sm:h-20 sm:px-10">
+        <.link navigate={~p"/"} aria-label="DueDesk"><.logo class="h-8" /></.link>
+        <div class="text-right text-sm text-muted">
+          <%= cond do %>
+            <% @header_action != [] -> %>
+              {render_slot(@header_action)}
+            <% @current_scope && @current_scope.user -> %>
               <.link
-                navigate={~p"/dashboard"}
-                class="px-4 py-2 rounded-lg bg-primary text-primary-content font-medium hover:opacity-90 transition"
+                href={~p"/users/log-out"}
+                method="delete"
+                class="font-medium text-zinc-600 transition hover:text-ink"
               >
-                Open DueDesk
+                Log out
               </.link>
-            <% else %>
-              <.link navigate={~p"/users/log-in"} class="px-3 py-2 rounded-lg hover:bg-base-200">
-                Log in
-              </.link>
-              <.link
-                navigate={~p"/users/register"}
-                class="px-4 py-2 rounded-lg bg-primary text-primary-content font-medium hover:opacity-90 transition"
-              >
-                Sign up
-              </.link>
-            <% end %>
-          </div>
-        </nav>
+            <% true -> %>
+          <% end %>
+        </div>
       </header>
 
-      <main class="flex-1">
-        {render_slot(@inner_block)}
+      <main class="flex flex-1 justify-center px-5 pb-16 pt-8 sm:pt-[12vh]">
+        <div class={["w-full", if(@wide, do: "max-w-[440px]", else: "max-w-[360px]")]}>
+          {render_slot(@inner_block)}
+        </div>
       </main>
 
-      <footer class="border-t border-base-300/70 text-sm text-base-content/60">
-        <div class="mx-auto max-w-6xl px-4 sm:px-6 py-8 flex flex-col sm:flex-row gap-2 justify-between">
-          <p>© {Date.utc_today().year} REALSME Solutions Pvt Ltd. DueDesk is made in India.</p>
-          <p>
-            <a href="mailto:support@duedesk.in" class="hover:text-base-content">
-              support@duedesk.in
-            </a>
-          </p>
-        </div>
+      <footer class="flex flex-col items-center justify-between gap-2 border-t border-line px-5 py-5 text-xs text-zinc-400 sm:flex-row sm:px-10">
+        <p>© {Date.utc_today().year} REALSME Solutions Pvt Ltd</p>
+        <p class="inline-flex items-center gap-1.5">
+          <.icon name="hero-lock-closed-mini" class="size-3.5" />
+          Your data stays private to your account
+        </p>
       </footer>
     </div>
     <.flash_group flash={@flash} />
@@ -105,42 +89,8 @@ defmodule DueDeskWeb.Layouts do
   end
 
   @doc """
-  Layout for sign up, log in, password reset and onboarding.
-  """
-  attr :flash, :map, required: true
-  attr :current_scope, :map, default: nil
-  attr :wide, :boolean, default: false
-  slot :inner_block, required: true
-
-  def auth(assigns) do
-    ~H"""
-    <div class="min-h-screen flex flex-col bg-base-200">
-      <header class="px-4 sm:px-6 h-16 flex items-center justify-between">
-        <.link navigate={~p"/"}><.logo class="h-8" /></.link>
-        <.link
-          :if={@current_scope && @current_scope.user}
-          href={~p"/users/log-out"}
-          method="delete"
-          class="text-sm text-base-content/70 hover:text-base-content"
-        >
-          Log out
-        </.link>
-      </header>
-      <main class="flex-1 flex items-start sm:items-center justify-center px-4 py-8">
-        <div class={[
-          "w-full bg-base-100 rounded-2xl border border-base-300 shadow-sm p-6 sm:p-8",
-          if(@wide, do: "max-w-xl", else: "max-w-md")
-        ]}>
-          {render_slot(@inner_block)}
-        </div>
-      </main>
-    </div>
-    <.flash_group flash={@flash} />
-    """
-  end
-
-  @doc """
-  The signed-in application shell.
+  The signed-in application shell: a left sidebar with the navigation, a
+  Create DueItem button and the account menu.
 
   Navigation is built from the scope's role:
 
@@ -154,193 +104,203 @@ defmodule DueDeskWeb.Layouts do
   slot :inner_block, required: true
 
   def app(assigns) do
-    assigns = assign(assigns, :nav, nav_items(assigns.current_scope))
+    {main, footer} =
+      assigns.current_scope
+      |> nav_items()
+      |> Enum.split_with(&(&1.key not in [:account, :support]))
+
+    assigns = assign(assigns, main_nav: main, footer_nav: footer)
 
     ~H"""
-    <div class="min-h-screen bg-base-200 lg:flex">
-      <%!-- Desktop sidebar --%>
-      <aside class="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-base-100 border-r border-base-300">
-        <div class="h-16 flex items-center px-5 border-b border-base-300">
-          <.link navigate={~p"/dashboard"}><.logo class="h-7" /></.link>
-        </div>
-        <.nav_list nav={@nav} active={@active} />
-      </aside>
-
-      <%!-- Mobile drawer --%>
-      <div id="mobile-nav" class="lg:hidden fixed inset-0 z-40 hidden" role="dialog" aria-modal="true">
-        <div class="absolute inset-0 bg-black/40" phx-click={hide_mobile_nav()}></div>
-        <aside class="absolute inset-y-0 left-0 w-72 max-w-[85%] bg-base-100 shadow-xl flex flex-col">
-          <div class="h-16 flex items-center justify-between px-5 border-b border-base-300">
-            <.logo class="h-7" />
-            <button
-              type="button"
-              class="p-2 rounded-lg hover:bg-base-200"
-              phx-click={hide_mobile_nav()}
-              aria-label="Close menu"
-            >
-              <.icon name="hero-x-mark" class="size-5" />
-            </button>
-          </div>
-          <.nav_list nav={@nav} active={@active} />
-        </aside>
-      </div>
-
-      <div class="flex-1 lg:pl-64 flex flex-col min-h-screen">
-        <%!-- Top bar --%>
-        <header class="sticky top-0 z-30 h-16 bg-base-100/95 backdrop-blur border-b border-base-300 flex items-center gap-3 px-4 sm:px-6">
-          <button
-            type="button"
-            class="lg:hidden p-2 -ml-2 rounded-lg hover:bg-base-200"
-            phx-click={show_mobile_nav()}
-            aria-label="Open menu"
-          >
-            <.icon name="hero-bars-3" class="size-6" />
-          </button>
-
-          <div class="min-w-0">
-            <p class="text-sm font-semibold truncate" id="account-name">
-              {@current_scope.customer_account.name}
-            </p>
-            <p class="text-xs text-base-content/60">{role_label(@current_scope)}</p>
-          </div>
-
-          <form
-            action={~p"/due-items"}
-            method="get"
-            class="hidden md:flex flex-1 max-w-md ml-auto"
-            role="search"
-          >
-            <label class="relative w-full">
-              <span class="sr-only">Search DueItems</span>
-              <.icon
-                name="hero-magnifying-glass"
-                class="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/50"
-              />
-              <input
-                type="search"
-                name="q"
-                placeholder="Search DueItems"
-                class="w-full h-10 pl-9 pr-3 rounded-lg bg-base-200 border border-transparent focus:border-primary focus:bg-base-100 outline-none text-sm transition"
-              />
-            </label>
-          </form>
-
-          <div class="flex items-center gap-1 ml-auto md:ml-2">
-            <.link
-              navigate={~p"/dashboard"}
-              class="p-2 rounded-lg hover:bg-base-200 relative"
-              aria-label="Notifications"
-            >
-              <.icon name="hero-bell" class="size-5" />
-            </.link>
-
-            <div class="relative">
-              <button
-                type="button"
-                id="user-menu-button"
-                class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-base-200"
-                phx-click={JS.toggle(to: "#user-menu")}
-                aria-haspopup="true"
-              >
-                <span class="size-8 rounded-full bg-primary/15 text-primary font-semibold text-sm flex items-center justify-center">
-                  {initials(@current_scope.user.name)}
-                </span>
-                <.icon name="hero-chevron-down-mini" class="size-4 hidden sm:block" />
-              </button>
-              <div
-                id="user-menu"
-                class="hidden absolute right-0 mt-2 w-60 rounded-xl bg-base-100 border border-base-300 shadow-lg py-2 text-sm"
-                phx-click-away={JS.hide(to: "#user-menu")}
-              >
-                <div class="px-4 py-2 border-b border-base-300 mb-1">
-                  <p class="font-medium truncate">{@current_scope.user.name}</p>
-                  <p class="text-base-content/60 truncate">{@current_scope.user.email}</p>
-                </div>
-                <.link navigate={~p"/users/settings"} class="block px-4 py-2 hover:bg-base-200">
-                  My profile
-                </.link>
-                <.link
-                  href={~p"/users/log-out"}
-                  method="delete"
-                  class="block px-4 py-2 hover:bg-base-200"
-                >
-                  Log out
-                </.link>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main class="flex-1 px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-8">
-          <div class="mx-auto max-w-6xl">
-            {render_slot(@inner_block)}
-          </div>
-        </main>
-      </div>
-
-      <%!-- Mobile bottom bar: Dashboard and DueItems always one tap away --%>
-      <nav class="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-base-100 border-t border-base-300 grid grid-cols-3 text-xs">
-        <.link
-          navigate={~p"/dashboard"}
-          class={[
-            "flex flex-col items-center gap-1 py-2",
-            if(@active == :dashboard, do: "text-primary", else: "text-base-content/70")
-          ]}
-        >
-          <.icon name="hero-home" class="size-5" /> Dashboard
-        </.link>
-        <.link
-          navigate={~p"/due-items"}
-          class={[
-            "flex flex-col items-center gap-1 py-2",
-            if(@active == :due_items, do: "text-primary", else: "text-base-content/70")
-          ]}
-        >
-          <.icon name="hero-clipboard-document-list" class="size-5" />
-          {if Permissions.admin?(@current_scope), do: "DueItems", else: "My DueItems"}
-        </.link>
+    <div class="min-h-screen bg-white">
+      <header class="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-white/90 px-4 backdrop-blur lg:hidden">
+        <.link navigate={~p"/dashboard"} aria-label="Dashboard"><.logo class="h-7" /></.link>
         <button
           type="button"
-          class="flex flex-col items-center gap-1 py-2 text-base-content/70"
-          phx-click={show_mobile_nav()}
+          id="mobile-nav-button"
+          class="flex size-9 items-center justify-center rounded-md text-zinc-600 transition hover:bg-zinc-100 hover:text-ink"
+          phx-click={toggle_sidebar()}
+          aria-label="Open menu"
         >
-          <.icon name="hero-bars-3" class="size-5" /> Menu
+          <.icon name="hero-bars-3" class="size-5" />
         </button>
-      </nav>
+      </header>
+
+      <div
+        id="sidebar-backdrop"
+        class="fixed inset-0 z-40 hidden bg-zinc-900/20 backdrop-blur-[2px] lg:hidden"
+        phx-click={toggle_sidebar()}
+        aria-hidden="true"
+      />
+
+      <aside
+        id="sidebar"
+        class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-line bg-[#fbfbfa] transition-transform duration-200 ease-out max-lg:-translate-x-full"
+      >
+        <div class="flex h-16 shrink-0 items-center justify-between px-5">
+          <.link navigate={~p"/dashboard"} aria-label="Dashboard"><.logo class="h-7" /></.link>
+          <button
+            type="button"
+            class="flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 lg:hidden"
+            phx-click={toggle_sidebar()}
+            aria-label="Close menu"
+          >
+            <.icon name="hero-x-mark" class="size-5" />
+          </button>
+        </div>
+
+        <form action={~p"/due-items"} method="get" role="search" class="px-3 pb-3">
+          <label class="relative block">
+            <span class="sr-only">Search DueItems</span>
+            <.icon
+              name="hero-magnifying-glass"
+              class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400"
+            />
+            <input
+              id="search-input"
+              type="search"
+              name="q"
+              placeholder="Search"
+              class="h-9 w-full rounded-md border border-transparent bg-[#efefed] pl-9 pr-3 text-sm placeholder:text-zinc-500 transition focus:border-zinc-300 focus:bg-white focus:outline-none"
+            />
+          </label>
+        </form>
+
+        <nav id="main-nav" aria-label="Main" class="flex-1 space-y-0.5 overflow-y-auto px-3">
+          <.nav_link :for={item <- @main_nav} item={item} active={@active} />
+        </nav>
+
+        <div class="space-y-0.5 px-3 pb-3">
+          <.button navigate={~p"/due-items/new"} size="lg" class="mb-3 w-full">
+            <.icon name="hero-plus" class="size-4" /> Create DueItem
+          </.button>
+          <.nav_link :for={item <- @footer_nav} item={item} active={@active} small />
+          <.link
+            navigate={~p"/users/settings"}
+            class={[nav_class(@active == :profile), "py-1.5 text-sm"]}
+          >
+            <.icon name="hero-user-circle" class="size-[18px] text-zinc-500" /> My profile
+          </.link>
+        </div>
+
+        <div class="relative border-t border-line p-3">
+          <button
+            type="button"
+            id="user-menu-button"
+            class="flex w-full items-center gap-3 rounded-md p-2 text-left transition hover:bg-zinc-100"
+            phx-click={toggle_menu("#user-menu")}
+            aria-haspopup="true"
+          >
+            <span class={[
+              "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
+              avatar_colour(@current_scope.customer_account.name)
+            ]}>
+              {initials(@current_scope.customer_account.name)}
+            </span>
+            <span class="min-w-0 flex-1">
+              <span id="account-name" class="block truncate text-sm font-medium text-ink">
+                {@current_scope.customer_account.name}
+              </span>
+              <span class="block truncate text-xs text-muted">{role_label(@current_scope)}</span>
+            </span>
+            <.icon name="hero-chevron-up-down-mini" class="size-4 shrink-0 text-zinc-400" />
+          </button>
+          <div
+            id="user-menu"
+            class="absolute inset-x-3 bottom-full mb-1 hidden rounded-lg border border-line bg-white p-1.5 text-sm shadow-float"
+            phx-click-away={hide("#user-menu")}
+          >
+            <div class="px-2.5 py-2">
+              <p class="truncate font-medium text-ink">{@current_scope.user.name}</p>
+              <p class="truncate text-xs text-muted">{@current_scope.user.email}</p>
+            </div>
+            <div class="my-1 border-t border-line" />
+            <.link navigate={~p"/users/settings"} class={menu_item()}>
+              <.icon name="hero-user-circle" class="size-4 text-zinc-400" /> My profile
+            </.link>
+            <.link href={~p"/users/log-out"} method="delete" class={menu_item()}>
+              <.icon name="hero-arrow-right-start-on-rectangle" class="size-4 text-zinc-400" />
+              Log out
+            </.link>
+          </div>
+        </div>
+      </aside>
+
+      <main class="lg:pl-64">
+        <div class="mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-8 lg:px-10 lg:pt-8">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
     </div>
     <.flash_group flash={@flash} />
     """
   end
 
-  attr :nav, :list, required: true
+  attr :item, :map, required: true
   attr :active, :atom, default: nil
+  attr :small, :boolean, default: false
 
-  defp nav_list(assigns) do
+  defp nav_link(assigns) do
     ~H"""
-    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1" aria-label="Main">
-      <.link
-        :for={item <- @nav}
-        navigate={item.path}
+    <.link
+      navigate={@item.path}
+      aria-current={@item.key == @active && "page"}
+      class={[nav_class(@item.key == @active), if(@small, do: "py-1.5 text-sm", else: "text-[15px]")]}
+    >
+      <.icon
+        name={@item.icon}
         class={[
-          "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition",
-          if(item.key == @active,
-            do: "bg-primary/10 text-primary",
-            else: "text-base-content/75 hover:bg-base-200 hover:text-base-content"
-          )
+          if(@small, do: "size-[18px]", else: "size-5"),
+          if(@item.key == @active, do: "text-ink", else: "text-zinc-500")
         ]}
-        aria-current={item.key == @active && "page"}
-      >
-        <.icon name={item.icon} class="size-5" />
-        {item.label}
-      </.link>
-    </nav>
+      />
+      {@item.label}
+    </.link>
     """
   end
+
+  defp nav_class(true),
+    do: "flex items-center gap-3 rounded-md bg-[#ececea] px-3 py-2 font-medium text-ink"
+
+  defp nav_class(false) do
+    "flex items-center gap-3 rounded-md px-3 py-2 font-medium text-zinc-600 transition hover:bg-[#f1f1ef] hover:text-ink"
+  end
+
+  defp menu_item do
+    "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-zinc-700 transition hover:bg-zinc-100 hover:text-ink"
+  end
+
+  defp toggle_sidebar do
+    "max-lg:-translate-x-full"
+    |> JS.toggle_class(to: "#sidebar")
+    |> JS.toggle(
+      to: "#sidebar-backdrop",
+      in: {"transition-opacity duration-200", "opacity-0", "opacity-100"},
+      out: {"transition-opacity duration-150", "opacity-100", "opacity-0"}
+    )
+  end
+
+  defp toggle_menu(selector) do
+    JS.toggle(
+      to: selector,
+      in:
+        {"transition ease-out duration-150", "opacity-0 translate-y-1",
+         "opacity-100 translate-y-0"},
+      out:
+        {"transition ease-in duration-100", "opacity-100 translate-y-0",
+         "opacity-0 translate-y-1"}
+    )
+  end
+
+  @avatar_colours ~w(bg-rose-500 bg-violet-500 bg-sky-600 bg-emerald-600 bg-amber-500 bg-indigo-500)
+
+  defp avatar_colour(name),
+    do: Enum.at(@avatar_colours, :erlang.phash2(name, length(@avatar_colours)))
 
   defp nav_items(%Scope{} = scope) do
     if Permissions.admin?(scope) do
       [
-        %{key: :dashboard, label: "Dashboard", icon: "hero-home", path: ~p"/dashboard"},
+        %{key: :dashboard, label: "Dashboard", icon: "hero-squares-2x2", path: ~p"/dashboard"},
         %{
           key: :due_items,
           label: "DueItems",
@@ -355,19 +315,19 @@ defmodule DueDeskWeb.Layouts do
         },
         %{key: :users, label: "Users", icon: "hero-users", path: ~p"/users"},
         %{key: :categories, label: "Categories", icon: "hero-tag", path: ~p"/categories"},
-        %{key: :account, label: "Account", icon: "hero-cog-6-tooth", path: ~p"/account"},
-        %{key: :support, label: "Support", icon: "hero-lifebuoy", path: ~p"/support"}
+        %{key: :support, label: "Help & Support", icon: "hero-lifebuoy", path: ~p"/support"},
+        %{key: :account, label: "Account", icon: "hero-cog-6-tooth", path: ~p"/account"}
       ]
     else
       [
-        %{key: :dashboard, label: "Dashboard", icon: "hero-home", path: ~p"/dashboard"},
+        %{key: :dashboard, label: "Dashboard", icon: "hero-squares-2x2", path: ~p"/dashboard"},
         %{
           key: :due_items,
           label: "My DueItems",
           icon: "hero-clipboard-document-list",
           path: ~p"/due-items"
         },
-        %{key: :support, label: "Support", icon: "hero-lifebuoy", path: ~p"/support"}
+        %{key: :support, label: "Help & Support", icon: "hero-lifebuoy", path: ~p"/support"}
       ]
     end
   end
@@ -382,22 +342,19 @@ defmodule DueDeskWeb.Layouts do
     |> String.upcase()
   end
 
-  defp show_mobile_nav, do: JS.show(to: "#mobile-nav")
-  defp hide_mobile_nav, do: JS.hide(to: "#mobile-nav")
-
   @doc """
-  Shows the flash group with standard titles and content.
-
-  ## Examples
-
-      <.flash_group flash={@flash} />
+  Shows the flash notices and the connection-lost notices.
   """
-  attr :flash, :map, required: true, doc: "the map of flash messages"
-  attr :id, :string, default: "flash-group", doc: "the optional id of flash container"
+  attr :flash, :map, required: true
+  attr :id, :string, default: "flash-group"
 
   def flash_group(assigns) do
     ~H"""
-    <div id={@id} aria-live="polite">
+    <div
+      id={@id}
+      aria-live="polite"
+      class="pointer-events-none fixed right-4 top-4 z-50 flex w-[calc(100%-2rem)] flex-col gap-2 sm:w-96"
+    >
       <.flash kind={:info} flash={@flash} />
       <.flash kind={:error} flash={@flash} />
 

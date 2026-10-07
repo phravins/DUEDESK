@@ -2,10 +2,9 @@ defmodule DueDeskWeb.PageController do
   use DueDeskWeb, :controller
 
   def home(conn, _params) do
-    render(conn, :home, page_title: "Know what is due before it becomes overdue")
-  end
-
-  def pricing(conn, _params) do
-    render(conn, :pricing, page_title: "Pricing", plans: DueDesk.Billing.Plans.all())
+    case conn.assigns.current_scope do
+      %{user: %{}} -> redirect(conn, to: ~p"/dashboard")
+      _ -> redirect(conn, to: ~p"/users/log-in")
+    end
   end
 end
