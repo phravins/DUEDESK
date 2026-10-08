@@ -14,9 +14,9 @@ defmodule DueDesk.Billing do
   alias DueDesk.Billing.Plans
   alias DueDesk.DueItems.DueItem
   alias DueDesk.Organisations.Organisation
-  alias DueDesk.Tenancy.Membership
+  alias DueDesk.Tenancy.{Invitation, Membership}
 
-  @type resource :: :organisation | :member | :due_item | :storage
+  @type resource :: :organisation | :member | :super_admin | :due_item | :storage
   @type limit_info :: %{plan: map(), limit: non_neg_integer(), resource: resource()}
 
   @doc "The plan of the scope's account."
@@ -27,6 +27,8 @@ defmodule DueDesk.Billing do
 
     * `:organisations` — active Organisations
     * `:members` — active Administrators and Users (Super Admins are not counted)
+    * `:invitations` — pending invitations, which hold a seat until they
+      are accepted, revoked or expire
     * `:super_admins` — active Super Admins
     * `:due_items` — DueItems that are not archived (including those
       awaiting disposition)
@@ -47,6 +49,7 @@ defmodule DueDesk.Billing do
     %{
       organisations: count_active_organisations(account_id),
       members: Map.get(roles, "admin", 0) + Map.get(roles, "user", 0),
+      invitations: count_pending_invitations(account_id),
       super_admins: Map.get(roles, "super_admin", 0),
       due_items: count_due_items(account_id),
       storage_bytes: scope.customer_account.storage_used_bytes
@@ -113,10 +116,17 @@ defmodule DueDesk.Billing do
 
   defp limit_for(plan, :organisation), do: plan.max_organisations
   defp limit_for(plan, :member), do: plan.max_members
+  defp limit_for(plan, :super_admin), do: plan.max_super_admins
   defp limit_for(plan, :due_item), do: plan.max_due_items
 
   defp used(scope, :organisation), do: count_active_organisations(Scope.account_id!(scope))
-  defp used(scope, :member), do: usage(scope).members
+
+  defp used(scope, :member) do
+    usage = usage(scope)
+    usage.members + usage.invitations
+  end
+
+  defp used(scope, :super_admin), do: usage(scope).super_admins
   defp used(scope, :due_item), do: count_due_items(Scope.account_id!(scope))
 
   defp count_active_organisations(account_id) do
@@ -126,6 +136,29 @@ defmodule DueDesk.Billing do
     )
     |> Repo.one()
   end
+
+  defp count_pending_invitations(account_id) do
+    now = DateTime.utc_now(:second)
+
+    from(i in Invitation,
+      where:
+        i.customer_account_id == ^account_id and is_nil(i.accepted_at) and
+          is_nil(i.revoked_at) and i.expires_at > ^now,
+      select: count(i.id)
+    )
+    |> Repo.one()
+  end
+
+  @doc """
+  Seats for Administrators and Users: `%{used: n, limit: n}`, where
+  `used` counts active members and pending invitations.
+  """
+  def seats(%Scope{} = scope) do
+    %{used: used(scope, :member), limit: plan(scope).max_members}
+  end
+
+  @doc "Whether the plan allows more than one Super Admin."
+  def multiple_super_admins?(%Scope{} = scope), do: plan(scope).max_super_admins > 1
 
   defp count_due_items(account_id) do
     from(i in DueItem,
@@ -165,6 +198,8 @@ defmodule DueDesk.Billing do
   defp noun(:organisation, _), do: "Organisations"
   defp noun(:member, 1), do: "Administrator or User"
   defp noun(:member, _), do: "Administrators and Users"
+  defp noun(:super_admin, 1), do: "Super Admin"
+  defp noun(:super_admin, _), do: "Super Admins"
   defp noun(:due_item, 1), do: "DueItem"
   defp noun(:due_item, _), do: "DueItems"
 end

@@ -16,7 +16,8 @@
 # Passwords are generated on every run and printed once to this console.
 # Existing records are left alone, so running it twice is safe.
 #
-# Later phases add reminders here.
+# The Business and Entrepreneur accounts each have a pending invitation,
+# and the Entrepreneur account's User has WhatsApp reminders turned on.
 
 if Mix.env() != :dev do
   IO.puts("Seeds create demo logins and only run in the dev environment. Skipping.")
@@ -26,7 +27,7 @@ else
   alias DueDesk.Admin.Operator
   alias DueDesk.Documents.Document
   alias DueDesk.DueItems.{Cycle, DueItem}
-  alias DueDesk.Tenancy.Membership
+  alias DueDesk.Tenancy.{Invitation, Membership}
 
   import Ecto.Query, only: [from: 2]
 
@@ -413,6 +414,42 @@ else
         %Membership{customer_account_id: account.id, user_id: user.id}
         |> Membership.changeset(%{role: role, status: "active"})
         |> Repo.insert!()
+      end
+
+      # The Entrepreneur account's User gets WhatsApp reminders.
+      if plan == "entrepreneur" do
+        from(m in Membership,
+          where:
+            m.customer_account_id == ^account.id and m.user_id == ^member.id and
+              is_nil(m.whatsapp_consent_at)
+        )
+        |> Repo.update_all(
+          set: [notify_whatsapp: true, whatsapp_consent_at: DateTime.utc_now(:second)]
+        )
+      end
+
+      # A pending invitation on the paid accounts (Free has no seat left).
+      # Its token is thrown away; use Resend on /users to get a working
+      # link in /dev/mailbox.
+      invitee = "#{slug}.invitee@duedesk.local"
+      now = DateTime.utc_now(:second)
+
+      if plan != "free" and
+           not Repo.exists?(
+             from(i in Invitation,
+               where:
+                 i.customer_account_id == ^account.id and i.email == ^invitee and
+                   is_nil(i.accepted_at) and is_nil(i.revoked_at) and i.expires_at > ^now
+             )
+           ) do
+        Repo.insert!(%Invitation{
+          customer_account_id: account.id,
+          email: invitee,
+          role: "user",
+          token_hash: :crypto.hash(:sha256, :crypto.strong_rand_bytes(32)),
+          invited_by_user_id: owner.id,
+          expires_at: DateTime.add(now, Invitation.validity_days(), :day)
+        })
       end
 
       # Re-read the membership so the scope sees the updated plan.

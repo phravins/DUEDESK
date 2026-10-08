@@ -125,4 +125,32 @@ defmodule DueDesk.Permissions do
   def can_invite_role?(scope, "admin"), do: super_admin?(scope)
   def can_invite_role?(scope, "user"), do: admin?(scope)
   def can_invite_role?(_scope, _role), do: false
+
+  @doc """
+  Whether the scope may deactivate or reactivate `membership`: Super
+  Admins manage Administrators and Users, Administrators manage Users.
+  Nobody manages their own membership or a Super Admin's here.
+  """
+  def can_manage_member?(%Scope{} = scope, membership) do
+    other_member_of_account?(scope, membership) and
+      can_invite_role?(scope, membership.role)
+  end
+
+  def can_manage_member?(_scope, _membership), do: false
+
+  @doc """
+  Whether the scope may switch `membership` between Administrator and
+  User. Super Admin only, never for their own membership.
+  """
+  def can_change_role?(%Scope{} = scope, membership) do
+    super_admin?(scope) and other_member_of_account?(scope, membership) and
+      membership.role in ["admin", "user"]
+  end
+
+  def can_change_role?(_scope, _membership), do: false
+
+  defp other_member_of_account?(scope, membership) do
+    member?(scope) and membership.customer_account_id == scope.customer_account.id and
+      membership.user_id != scope.user.id
+  end
 end

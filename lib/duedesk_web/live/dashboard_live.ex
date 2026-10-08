@@ -365,7 +365,11 @@ defmodule DueDeskWeb.DashboardLive do
                 limit={@plan.max_organisations}
               />
               <.meter label="DueItems" used={@usage.due_items} limit={@plan.max_due_items} />
-              <.meter label="Admins & Users" used={@usage.members} limit={@plan.max_members} />
+              <.meter
+                label="Admins & Users"
+                used={@usage.members + @usage.invitations}
+                limit={@plan.max_members}
+              />
               <.meter
                 label="Storage"
                 used={@usage.storage_bytes}

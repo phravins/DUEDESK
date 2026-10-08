@@ -58,4 +58,31 @@ defmodule DueDesk.TenancyFixtures do
         membership: %{scope.membership | customer_account: account}
     }
   end
+
+  @doc """
+  Invites `attrs["email"]` (a new address by default) as a User. Returns
+  `{invitation, token}`, the token taken from the invitation email.
+  """
+  def invitation_fixture(%Scope{} = scope, attrs \\ %{}) do
+    attrs = Enum.into(attrs, %{"email" => unique_user_email(), "role" => "user"})
+    {:ok, invitation} = Tenancy.invite_member(scope, attrs, &"[TOKEN]#{&1}[TOKEN]")
+    {invitation, invitation_token(invitation.email)}
+  end
+
+  @doc "The token from the latest invitation email sent to `email`."
+  def invitation_token(email, last \\ nil) do
+    receive do
+      {:email, %Swoosh.Email{to: [{_, ^email}], text_body: body}} ->
+        case String.split(body, "[TOKEN]") do
+          [_, token | _] -> invitation_token(email, token)
+          _ -> invitation_token(email, last)
+        end
+    after
+      0 -> last || raise "no invitation email to #{email}"
+    end
+  end
+
+  @doc "Marks the scope's user as having entered their password just now."
+  def sudo(%Scope{user: user} = scope),
+    do: %{scope | user: %{user | authenticated_at: DateTime.utc_now(:second)}}
 end

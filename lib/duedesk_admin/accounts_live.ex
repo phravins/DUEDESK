@@ -12,7 +12,7 @@ defmodule DueDeskAdmin.AccountsLive do
     ~H"""
     <div class="min-h-screen bg-white">
       <header class="sticky top-0 z-30 border-b border-line bg-white/90 backdrop-blur">
-        <div class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+        <div class="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <div class="flex items-center gap-3">
             <Layouts.logo class="h-7" />
             <span class="rounded-full border border-line px-2.5 py-0.5 text-xs font-medium text-zinc-600">
@@ -28,7 +28,7 @@ defmodule DueDeskAdmin.AccountsLive do
         </div>
       </header>
 
-      <main class="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+      <main class="px-4 py-10 sm:px-6 lg:px-8">
         <.page_header eyebrow="Operator" icon="hero-shield-check" title="Customer Accounts">
           <:subtitle>{length(@accounts)} shown</:subtitle>
           <:actions>

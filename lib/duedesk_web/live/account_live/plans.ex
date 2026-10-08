@@ -26,7 +26,11 @@ defmodule DueDeskWeb.AccountLive.Plans do
         <div class="grid gap-x-10 gap-y-5 sm:grid-cols-2">
           <.meter label="Organisations" used={@usage.organisations} limit={@plan.max_organisations} />
           <.meter label="DueItems" used={@usage.due_items} limit={@plan.max_due_items} />
-          <.meter label="Admins & Users" used={@usage.members} limit={@plan.max_members} />
+          <.meter
+            label="Admins & Users"
+            used={@usage.members + @usage.invitations}
+            limit={@plan.max_members}
+          />
           <.meter
             label="Storage"
             used={@usage.storage_bytes}

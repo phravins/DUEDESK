@@ -63,9 +63,10 @@ defmodule DueDeskWeb.Router do
       live "/organisations/:id", OrganisationLive.Show, :show
       live "/organisations/:id/edit", OrganisationLive.Form, :edit
       live "/categories", CategoryLive.Index, :index
-      live "/users", PlaceholderLive, :users
+      live "/users", UserLive.Index, :index
       live "/account", PlaceholderLive, :account
       live "/account/plans", AccountLive.Plans, :index
+      live "/account/super-admins", AccountLive.SuperAdmins, :index
       live "/support", PlaceholderLive, :support
 
       live "/users/settings", UserLive.Settings, :edit
@@ -85,6 +86,7 @@ defmodule DueDeskWeb.Router do
     end
 
     post "/users/update-password", UserSessionController, :update_password
+    get "/users/confirm-access", UserSessionController, :confirm
   end
 
   # Document downloads: a controller, so the account and role come from the
@@ -107,7 +109,12 @@ defmodule DueDeskWeb.Router do
       live "/users/confirm/:token", UserLive.Confirmation, :confirm
       live "/users/reset-password", UserLive.ForgotPassword, :new
       live "/users/reset-password/:token", UserLive.ResetPassword, :edit
+
+      # Works signed out (sign up or log in) and signed in (accept).
+      live "/invitations/:token", InvitationLive, :show
     end
+
+    get "/invitations/:token/log-in", UserSessionController, :invitation
 
     post "/users/log-in", UserSessionController, :create
     delete "/users/log-out", UserSessionController, :delete

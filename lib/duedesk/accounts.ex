@@ -317,6 +317,14 @@ defmodule DueDesk.Accounts do
     :ok
   end
 
+  @doc """
+  The user's session tokens, so their open pages can be disconnected
+  after their access changes.
+  """
+  def list_session_tokens(user_id) do
+    Repo.all(from(t in UserToken, where: t.user_id == ^user_id and t.context == "session"))
+  end
+
   ## Token helper
 
   defp update_user_and_delete_all_tokens(changeset) do

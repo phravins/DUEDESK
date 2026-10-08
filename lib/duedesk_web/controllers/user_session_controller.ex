@@ -1,7 +1,7 @@
 defmodule DueDeskWeb.UserSessionController do
   use DueDeskWeb, :controller
 
-  alias DueDesk.Accounts
+  alias DueDesk.{Accounts, Tenancy}
   alias DueDeskWeb.UserAuth
 
   def create(conn, %{"user" => user_params}) do
@@ -45,6 +45,38 @@ defmodule DueDeskWeb.UserSessionController do
     conn
     |> put_session(:user_return_to, ~p"/users/settings")
     |> create(Map.put(user_params, "email", user.email), "Password updated successfully.")
+  end
+
+  # Pages that ask for the password again before they open.
+  @confirm_paths ["/account/super-admins"]
+
+  @doc """
+  Asks a signed-in user for their password again, then returns them to
+  `to` (one of a few known pages).
+  """
+  def confirm(conn, %{"to" => to}) when to in @confirm_paths do
+    conn
+    |> put_session(:user_return_to, to)
+    |> redirect(to: ~p"/users/log-in")
+  end
+
+  def confirm(conn, _params), do: redirect(conn, to: ~p"/dashboard")
+
+  @doc """
+  "Log in to accept" on an invitation: logs in, then returns to the
+  invitation page with the invited email filled in.
+  """
+  def invitation(conn, %{"token" => token}) do
+    case Tenancy.get_invitation_by_token(token) do
+      nil ->
+        redirect(conn, to: ~p"/invitations/#{token}")
+
+      invitation ->
+        conn
+        |> put_session(:user_return_to, ~p"/invitations/#{token}")
+        |> put_flash(:email, invitation.email)
+        |> redirect(to: ~p"/users/log-in")
+    end
   end
 
   def delete(conn, _params) do
