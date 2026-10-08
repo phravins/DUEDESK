@@ -7,7 +7,7 @@ defmodule DueDeskWeb.OrganisationLive.Index do
 
   on_mount {DueDeskWeb.UserAuth, :require_admin}
 
-  alias DueDesk.{Billing, Organisations, Permissions}
+  alias DueDesk.{Billing, DueItems, Organisations, Permissions}
   alias DueDesk.Organisations.Identifier
 
   @impl true
@@ -103,7 +103,12 @@ defmodule DueDeskWeb.OrganisationLive.Index do
               <td class="px-4 py-3.5 font-mono text-[13px] text-zinc-600">
                 {organisation.gstin || "—"}
               </td>
-              <td class="px-4 py-3.5 text-right tabular-nums text-zinc-600">0</td>
+              <td
+                id={"organisation-due-item-count-#{organisation.id}"}
+                class="px-4 py-3.5 text-right tabular-nums text-zinc-600"
+              >
+                {Map.get(@due_item_counts, organisation.id, 0)}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -142,6 +147,7 @@ defmodule DueDeskWeb.OrganisationLive.Index do
      socket
      |> assign(:status, status)
      |> assign(:counts, Organisations.count_by_status(scope))
+     |> assign(:due_item_counts, DueItems.count_active_by_organisation(scope))
      |> assign(:empty?, organisations == [])
      |> stream(:organisations, organisations, reset: true)}
   end

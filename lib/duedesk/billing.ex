@@ -12,10 +12,11 @@ defmodule DueDesk.Billing do
   alias DueDesk.{Permissions, Repo}
   alias DueDesk.Accounts.Scope
   alias DueDesk.Billing.Plans
+  alias DueDesk.DueItems.DueItem
   alias DueDesk.Organisations.Organisation
   alias DueDesk.Tenancy.Membership
 
-  @type resource :: :organisation | :member
+  @type resource :: :organisation | :member | :due_item
   @type limit_info :: %{plan: map(), limit: non_neg_integer(), resource: resource()}
 
   @doc "The plan of the scope's account."
@@ -27,7 +28,8 @@ defmodule DueDesk.Billing do
     * `:organisations` — active Organisations
     * `:members` — active Administrators and Users (Super Admins are not counted)
     * `:super_admins` — active Super Admins
-    * `:due_items` — active DueItems (from Phase 2)
+    * `:due_items` — DueItems that are not archived (including those
+      awaiting disposition)
     * `:storage_bytes` — stored document bytes
   """
   def usage(%Scope{} = scope) do
@@ -46,7 +48,7 @@ defmodule DueDesk.Billing do
       organisations: count_active_organisations(account_id),
       members: Map.get(roles, "admin", 0) + Map.get(roles, "user", 0),
       super_admins: Map.get(roles, "super_admin", 0),
-      due_items: 0,
+      due_items: count_due_items(account_id),
       storage_bytes: scope.customer_account.storage_used_bytes
     }
   end
@@ -71,14 +73,24 @@ defmodule DueDesk.Billing do
 
   defp limit_for(plan, :organisation), do: plan.max_organisations
   defp limit_for(plan, :member), do: plan.max_members
+  defp limit_for(plan, :due_item), do: plan.max_due_items
 
   defp used(scope, :organisation), do: count_active_organisations(Scope.account_id!(scope))
   defp used(scope, :member), do: usage(scope).members
+  defp used(scope, :due_item), do: count_due_items(Scope.account_id!(scope))
 
   defp count_active_organisations(account_id) do
     from(o in Organisation,
       where: o.customer_account_id == ^account_id and o.status == "active",
       select: count(o.id)
+    )
+    |> Repo.one()
+  end
+
+  defp count_due_items(account_id) do
+    from(i in DueItem,
+      where: i.customer_account_id == ^account_id and i.status != "archived",
+      select: count(i.id)
     )
     |> Repo.one()
   end
@@ -101,4 +113,6 @@ defmodule DueDesk.Billing do
   defp noun(:organisation, _), do: "Organisations"
   defp noun(:member, 1), do: "Administrator or User"
   defp noun(:member, _), do: "Administrators and Users"
+  defp noun(:due_item, 1), do: "DueItem"
+  defp noun(:due_item, _), do: "DueItems"
 end

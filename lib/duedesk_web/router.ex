@@ -51,8 +51,10 @@ defmodule DueDeskWeb.Router do
     live_session :account, on_mount: [{DueDeskWeb.UserAuth, :require_account}] do
       live "/dashboard", DashboardLive, :index
 
-      live "/due-items", PlaceholderLive, :due_items
-      live "/due-items/new", PlaceholderLive, :new_due_item
+      live "/due-items", DueItemLive.Index, :index
+      live "/due-items/new", DueItemLive.Form, :new
+      live "/due-items/:id", DueItemLive.Show, :show
+      live "/due-items/:id/edit", DueItemLive.Form, :edit
       live "/organisations", OrganisationLive.Index, :index
       live "/organisations/new", OrganisationLive.Form, :new
       live "/organisations/:id", OrganisationLive.Show, :show

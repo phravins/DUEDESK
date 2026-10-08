@@ -2,12 +2,14 @@ defmodule DueDeskWeb.DashboardLive do
   @moduledoc """
   The landing page after log in (UX spec §11–§14). Super Admins and
   Administrators see account-wide status; Users see only their own work.
-
-  Counts and the timeline are wired to real DueItems in Phase 2.
+  Every count and list goes through `DueDesk.DueItems`, so the visibility
+  rule is the same as on the DueItems list.
   """
   use DueDeskWeb, :live_view
 
-  alias DueDesk.{Billing, Permissions, Tenancy}
+  import DueDeskWeb.DueItemComponents
+
+  alias DueDesk.{Billing, DueItems, Permissions, Tenancy}
   alias DueDesk.Billing.Plans
 
   @timeline_days 30
@@ -133,6 +135,41 @@ defmodule DueDeskWeb.DashboardLive do
           </.card>
 
           <.card
+            :for={list <- @lists}
+            :if={list.items != []}
+            id={"list-#{list.key}"}
+            title={list.title}
+          >
+            <:action>
+              <.round_link navigate={list.navigate} label={"View all #{list.title}"} />
+            </:action>
+            <ul class="-my-1">
+              <.due_item_row
+                :for={item <- list.items}
+                id={"#{list.key}-#{item.id}"}
+                item={item}
+                status={item_status(item, @today, @due_soon_days)}
+              />
+            </ul>
+          </.card>
+
+          <.card
+            :if={!@admin? and @recent != []}
+            id="recently-updated"
+            title="Recently updated"
+          >
+            <ul class="-my-1">
+              <.due_item_row
+                :for={item <- @recent}
+                id={"recent-#{item.id}"}
+                item={item}
+                status={item_status(item, @today, @due_soon_days)}
+              />
+            </ul>
+          </.card>
+
+          <.card
+            :if={!@has_items?}
             id="welcome"
             title={if @admin?, do: "Welcome to DueDesk", else: "No DueItems assigned to you yet"}
           >
@@ -151,7 +188,12 @@ defmodule DueDeskWeb.DashboardLive do
                 navigate={~p"/organisations"}
                 done={@usage.organisations > 0}
               />
-              <.setup_step number={2} title="Create a DueItem" navigate={~p"/due-items/new"} />
+              <.setup_step
+                number={2}
+                title="Create a DueItem"
+                navigate={~p"/due-items/new"}
+                done={@has_items?}
+              />
               <.setup_step number={3} title="Invite your team" navigate={~p"/users"} />
             </ol>
             <.button :if={!@admin?} navigate={~p"/due-items/new"}>
@@ -169,6 +211,61 @@ defmodule DueDeskWeb.DashboardLive do
         </div>
 
         <div class="space-y-4">
+          <.card :if={@admin? and @by_organisation != []} id="by-organisation" title="By Organisation">
+            <:subtitle>Active DueItems, and how many need attention.</:subtitle>
+            <ul class="-my-1 divide-y divide-line">
+              <li :for={row <- Enum.take(@by_organisation, 6)} id={"by-organisation-#{row.id}"}>
+                <.link
+                  navigate={~p"/due-items?organisation_id=#{row.id}"}
+                  class="group flex items-center gap-3 py-2.5 text-sm"
+                >
+                  <span class="min-w-0 flex-1 truncate text-ink group-hover:underline group-hover:underline-offset-2">
+                    {row.name}
+                  </span>
+                  <span
+                    :if={row.overdue > 0}
+                    class="shrink-0 text-xs font-medium tabular-nums text-rose-600"
+                    title="Overdue"
+                  >
+                    {row.overdue} overdue
+                  </span>
+                  <span
+                    :if={row.due_soon > 0}
+                    class="shrink-0 text-xs font-medium tabular-nums text-amber-600"
+                    title="Due soon"
+                  >
+                    {row.due_soon} soon
+                  </span>
+                  <span class="w-8 shrink-0 text-right tabular-nums text-zinc-500">{row.total}</span>
+                </.link>
+              </li>
+            </ul>
+          </.card>
+
+          <.card :if={@admin? and @by_user != []} id="by-person" title="By person">
+            <:subtitle>Active DueItems per Primary Responsible.</:subtitle>
+            <ul class="-my-1 divide-y divide-line">
+              <li :for={row <- Enum.take(@by_user, 6)} id={"by-person-#{row.id}"}>
+                <.link
+                  navigate={~p"/due-items?primary_user_id=#{row.id}"}
+                  class="group flex items-center gap-3 py-2.5 text-sm"
+                >
+                  <.avatar name={row.name} />
+                  <span class="min-w-0 flex-1 truncate text-ink group-hover:underline group-hover:underline-offset-2">
+                    {row.name}
+                  </span>
+                  <span
+                    :if={row.overdue > 0}
+                    class="shrink-0 text-xs font-medium tabular-nums text-rose-600"
+                  >
+                    {row.overdue} overdue
+                  </span>
+                  <span class="w-8 shrink-0 text-right tabular-nums text-zinc-500">{row.total}</span>
+                </.link>
+              </li>
+            </ul>
+          </.card>
+
           <.card :if={@super_admin?} id="capacity" title="Capacity">
             <:subtitle>Usage against your plan limits.</:subtitle>
             <:action>
@@ -260,23 +357,55 @@ defmodule DueDeskWeb.DashboardLive do
     today = Tenancy.today(scope)
     admin? = Permissions.admin?(scope)
 
+    counts = DueItems.count_by_status(scope)
+    usage = if admin?, do: Billing.usage(scope), else: %{organisations: 0, due_items: 0}
+
+    has_items? =
+      if admin?,
+        do: usage.due_items > 0,
+        else: counts.overdue + counts.due_soon + counts.up_to_date > 0
+
     {:ok,
      socket
      |> assign(:page_title, "Dashboard")
      |> assign(:today, today)
+     |> assign(:due_soon_days, scope.customer_account.due_soon_days)
      |> assign(:admin?, admin?)
      |> assign(:super_admin?, Permissions.super_admin?(scope))
      |> assign(:plan, Billing.plan(scope))
-     |> assign(:usage, if(admin?, do: Billing.usage(scope), else: %{organisations: 0}))
-     |> assign(:counts, %{overdue: 0, due_soon: 0, unassigned: 0, up_to_date: 0})
-     |> assign(:timeline, empty_timeline(today))
+     |> assign(:usage, usage)
+     |> assign(:counts, counts)
+     |> assign(:has_items?, has_items?)
+     |> assign(:lists, attention_lists(scope, counts, admin?))
+     |> assign(:recent, if(admin?, do: [], else: DueItems.list_recently_updated(scope, 5)))
+     |> assign(:by_organisation, DueItems.counts_by_organisation(scope))
+     |> assign(:by_user, DueItems.counts_by_user(scope))
+     |> assign(:timeline, DueItems.due_timeline(scope, @timeline_days))
      |> assign(:timeline_days, @timeline_days)
      |> assign(:dots_per_day, @dots_per_day)
      |> assign(:reminder_schedule, @reminder_schedule)}
   end
 
-  defp empty_timeline(today) do
-    for offset <- 0..(@timeline_days - 1), do: %{date: Date.add(today, offset), count: 0}
+  @list_size 5
+
+  # The top few Overdue, Due Soon and (for Administrators) Unassigned
+  # DueItems. Lists with nothing in them are not queried.
+  defp attention_lists(scope, counts, admin?) do
+    [
+      {:overdue, "Overdue", %{"status" => "overdue"}, counts.overdue > 0},
+      {:due_soon, "Due Soon", %{"status" => "due_soon"}, counts.due_soon > 0},
+      {:unassigned, "Unassigned", %{"assignment" => "unassigned"},
+       admin? and counts.unassigned > 0}
+    ]
+    |> Enum.map(fn {key, title, params, wanted?} ->
+      %{
+        key: key,
+        title: title,
+        navigate: ~p"/due-items?#{params}",
+        items:
+          if(wanted?, do: DueItems.list_due_items(scope, params, limit: @list_size), else: [])
+      }
+    end)
   end
 
   defp first_name(name), do: name |> String.split() |> List.first()

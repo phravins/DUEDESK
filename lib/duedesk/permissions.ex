@@ -6,8 +6,10 @@ defmodule DueDesk.Permissions do
   grant or restrict access. Every function takes a `DueDesk.Accounts.Scope`
   and is called from context functions, never only from the UI.
 
-  DueItem-level checks (assignment-based visibility for Users) are added in
-  Phase 2.
+  DueItems follow one visibility rule (Product Definition §6):
+  Administrators and Super Admins see every DueItem of the account; Users
+  see only active DueItems they are assigned to. `DueDesk.DueItems.Queries`
+  applies the same rule in SQL.
   """
 
   alias DueDesk.Accounts.Scope
@@ -39,6 +41,42 @@ defmodule DueDesk.Permissions do
   def can_manage_users?(scope), do: admin?(scope)
   def can_view_all_due_items?(scope), do: admin?(scope)
   def can_view_audit_log?(scope), do: admin?(scope)
+
+  # DueItems.
+
+  @doc "Any active member may create a DueItem (Users only for themselves)."
+  def can_create_due_item?(scope), do: member?(scope)
+
+  @doc """
+  Control of DueItems: Organisation, category, related party, dates after
+  creation, recurrence, reminders, responsibility, status overrides,
+  archive and restore. Administrators and Super Admins only.
+  """
+  def can_manage_due_items?(scope), do: admin?(scope)
+
+  @doc """
+  Whether the scope may see `item`. Needs the item's active assignments
+  preloaded.
+  """
+  def can_view_due_item?(%Scope{} = scope, item) do
+    cond do
+      not member?(scope) -> false
+      item.customer_account_id != scope.customer_account.id -> false
+      can_view_all_due_items?(scope) -> true
+      true -> assigned_active_item?(item, scope.user.id)
+    end
+  end
+
+  def can_view_due_item?(_scope, _item), do: false
+
+  @doc "Anyone who can see a DueItem may add a note to it."
+  def can_add_note?(scope, item), do: can_view_due_item?(scope, item)
+
+  defp assigned_active_item?(%{status: "active", disposition_state: nil} = item, user_id) do
+    Enum.any?(item.active_assignments, &(&1.user_id == user_id and is_nil(&1.ended_at)))
+  end
+
+  defp assigned_active_item?(_item, _user_id), do: false
 
   @doc """
   Super Admins may invite Administrators and Users; Administrators may

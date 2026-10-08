@@ -4,8 +4,9 @@ defmodule DueDeskWeb.OrganisationLiveTest do
   import Phoenix.LiveViewTest
   import DueDesk.TenancyFixtures
   import DueDesk.OrganisationsFixtures
+  import DueDesk.DueItemsFixtures
 
-  alias DueDesk.Organisations
+  alias DueDesk.{DueItems, Organisations}
 
   defp form_attrs(attrs \\ %{}) do
     Enum.into(attrs, %{
@@ -41,6 +42,33 @@ defmodule DueDeskWeb.OrganisationLiveTest do
       assert_patch(lv, ~p"/organisations?status=archived")
       assert has_element?(lv, "#organisations-#{archived.id}", "Archived Co")
       refute has_element?(lv, "#organisations-#{active.id}")
+    end
+
+    test "counts and lists each Organisation's active DueItems", %{conn: conn, scope: scope} do
+      busy = organisation_fixture(scope, name: "Busy Co")
+      quiet = organisation_fixture(scope, name: "Quiet Co")
+      first = due_item_fixture(scope, organisation_id: busy.id, title: "Trade Licence")
+      second = due_item_fixture(scope, organisation_id: busy.id)
+      archived = due_item_fixture(scope, organisation_id: busy.id)
+      {:ok, _} = DueItems.archive_due_item(scope, archived)
+
+      {:ok, lv, _html} = live(conn, ~p"/organisations")
+      assert has_element?(lv, "#organisation-due-item-count-#{busy.id}", "2")
+      assert has_element?(lv, "#organisation-due-item-count-#{quiet.id}", "0")
+
+      {:ok, lv, _html} = live(conn, ~p"/organisations/#{busy}")
+      assert has_element?(lv, "#organisation-due-item-#{first.id}", "Trade Licence")
+      assert has_element?(lv, "#organisation-due-item-#{second.id}")
+      refute has_element?(lv, "#organisation-due-item-#{archived.id}")
+
+      assert has_element?(
+               lv,
+               ~s|#organisation-due-items a[href="/due-items?organisation_id=#{busy.id}"]|
+             )
+
+      {:ok, lv, _html} = live(conn, ~p"/organisations/#{quiet}")
+      assert has_element?(lv, "#organisation-due-items-empty")
+      refute has_element?(lv, "#organisation-due-items")
     end
 
     test "shows an empty state with no Organisations", %{conn: conn} do

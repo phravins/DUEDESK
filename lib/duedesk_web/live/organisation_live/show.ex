@@ -1,13 +1,15 @@
 defmodule DueDeskWeb.OrganisationLive.Show do
   @moduledoc """
-  An Organisation's details, its latest declaration and (from Phase 2) its
+  An Organisation's details, its latest declaration and its active
   DueItems. Archive and restore live here.
   """
   use DueDeskWeb, :live_view
 
   on_mount {DueDeskWeb.UserAuth, :require_admin}
 
-  alias DueDesk.{Billing, Organisations, Permissions}
+  import DueDeskWeb.DueItemComponents
+
+  alias DueDesk.{Billing, DueItems, Organisations, Permissions, Tenancy}
   alias DueDesk.Organisations.Identifier
 
   @impl true
@@ -75,12 +77,45 @@ defmodule DueDeskWeb.OrganisationLive.Show do
             </dl>
           </.card>
 
+          <.card :if={@due_items != []} id="organisation-due-items" title="DueItems">
+            <:subtitle>Active DueItems, soonest first.</:subtitle>
+            <:action>
+              <.round_link
+                navigate={~p"/due-items?organisation_id=#{@organisation.id}"}
+                label="View all DueItems for this Organisation"
+              />
+            </:action>
+            <ul class="-my-1">
+              <.due_item_row
+                :for={item <- @due_items}
+                id={"organisation-due-item-#{item.id}"}
+                item={item}
+                status={item_status(item, @today, @due_soon_days)}
+                show_organisation={false}
+              />
+            </ul>
+            <:footer :if={@more_due_items?}>
+              <.link
+                navigate={~p"/due-items?organisation_id=#{@organisation.id}"}
+                class="font-medium text-zinc-600 hover:text-ink"
+              >
+                View all DueItems
+              </.link>
+            </:footer>
+          </.card>
+
           <.empty_state
-            id="organisation-due-items"
+            :if={@due_items == []}
+            id="organisation-due-items-empty"
             icon="hero-clipboard-document-list"
-            title="No DueItems yet"
+            title="No active DueItems"
           >
             Renewals, licences and filings for {@organisation.name} will be listed here.
+            <:action :if={@organisation.status == "active"}>
+              <.button variant="secondary" navigate={~p"/due-items/new"}>
+                <.icon name="hero-plus" class="size-4" /> New DueItem
+              </.button>
+            </:action>
           </.empty_state>
         </div>
 
@@ -119,6 +154,8 @@ defmodule DueDeskWeb.OrganisationLive.Show do
      socket
      |> assign(:page_title, organisation.name)
      |> assign(:tz, scope.customer_account.timezone)
+     |> assign(:today, Tenancy.today(scope))
+     |> assign(:due_soon_days, scope.customer_account.due_soon_days)
      |> assign(:limit_message, nil)
      |> assign(:plans_link?, false)
      |> assign_organisation(organisation)}
@@ -162,9 +199,20 @@ defmodule DueDeskWeb.OrganisationLive.Show do
     end
   end
 
+  @due_items_shown 10
+
   defp assign_organisation(socket, organisation) do
+    items =
+      DueItems.list_due_items(
+        socket.assigns.current_scope,
+        %{"organisation_id" => organisation.id},
+        limit: @due_items_shown + 1
+      )
+
     socket
     |> assign(:organisation, organisation)
+    |> assign(:due_items, Enum.take(items, @due_items_shown))
+    |> assign(:more_due_items?, length(items) > @due_items_shown)
     |> assign(
       :declaration,
       Organisations.latest_declaration(socket.assigns.current_scope, organisation)

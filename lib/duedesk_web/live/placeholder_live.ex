@@ -8,8 +8,6 @@ defmodule DueDeskWeb.PlaceholderLive do
   alias DueDesk.Permissions
 
   @sections %{
-    due_items: %{title: "DueItems", phase: 2, nav: :due_items, admin_only?: false},
-    new_due_item: %{title: "Create DueItem", phase: 2, nav: :due_items, admin_only?: false},
     users: %{title: "Users", phase: 5, nav: :users, admin_only?: true},
     account: %{title: "Account", phase: 7, nav: :account, admin_only?: true},
     support: %{title: "Support", phase: 7, nav: :support, admin_only?: false}

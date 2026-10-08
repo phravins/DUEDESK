@@ -2,6 +2,10 @@ defmodule DueDeskWeb.DashboardLiveTest do
   use DueDeskWeb.ConnCase, async: true
 
   import Phoenix.LiveViewTest
+  import DueDesk.TenancyFixtures
+  import DueDesk.DueItemsFixtures
+
+  alias DueDesk.DueItems
 
   @admin_sections ["Organisations", "Users", "Categories", "Account"]
 
@@ -21,6 +25,49 @@ defmodule DueDeskWeb.DashboardLiveTest do
       assert has_element?(lv, "#capacity", "Free plan")
       assert has_element?(lv, "#capacity", "100 MB")
       for section <- @admin_sections, do: assert(html =~ section)
+    end
+
+    test "shows the welcome card until the first DueItem", %{conn: conn, scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+      assert has_element?(lv, "#welcome")
+      refute has_element?(lv, "#list-overdue")
+
+      due_item_fixture(scope)
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+      refute has_element?(lv, "#welcome")
+    end
+
+    test "counts and lists DueItems that need attention", %{conn: conn, scope: scope} do
+      member = member_scope_fixture(scope, "user")
+
+      overdue =
+        due_item_fixture(scope,
+          title: "GST return",
+          due_date: days_from_today(scope, -2),
+          primary_user_id: member.user.id
+        )
+
+      soon = due_item_fixture(scope, title: "Fire NOC", due_date: days_from_today(scope, 7))
+      _later = due_item_fixture(scope, due_date: days_from_today(scope, 200))
+      archived = due_item_fixture(scope, due_date: days_from_today(scope, -9))
+      {:ok, _} = DueItems.archive_due_item(scope, archived)
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+
+      assert has_element?(lv, "#card-overdue", "1")
+      assert has_element?(lv, "#card-due-soon", "1")
+      assert has_element?(lv, "#card-unassigned", "2")
+      assert has_element?(lv, "#card-up-to-date", "1")
+
+      assert has_element?(lv, "#list-overdue #overdue-#{overdue.id}", "GST return")
+      assert has_element?(lv, "#list-due_soon #due_soon-#{soon.id}", "Fire NOC")
+      assert has_element?(lv, "#list-unassigned #unassigned-#{soon.id}")
+      refute has_element?(lv, "#overdue-#{archived.id}")
+
+      organisation = organisation_for(scope)
+      assert has_element?(lv, "#by-organisation-#{organisation.id}", "1 overdue")
+      assert has_element?(lv, "#by-person-#{member.user.id}", member.user.name)
+      assert has_element?(lv, "#capacity", "3 of 10")
     end
 
     test "status cards link to the filtered DueItems list", %{conn: conn} do
@@ -55,6 +102,42 @@ defmodule DueDeskWeb.DashboardLiveTest do
       refute has_element?(lv, "#capacity")
       refute has_element?(lv, ~s|a[href="/organisations"]|)
       refute has_element?(lv, ~s|a[href="/users"]|)
+    end
+
+    test "counts and lists only their own DueItems", %{conn: conn, scope: scope} do
+      admin = member_scope_fixture(scope, "admin")
+      other = member_scope_fixture(scope, "user")
+
+      mine =
+        due_item_fixture(admin,
+          title: "My GST return",
+          due_date: days_from_today(scope, -2),
+          primary_user_id: scope.user.id
+        )
+
+      not_mine =
+        due_item_fixture(admin,
+          due_date: days_from_today(scope, -2),
+          primary_user_id: other.user.id
+        )
+
+      _unassigned = due_item_fixture(admin, due_date: days_from_today(scope, -2))
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+
+      assert has_element?(lv, "#card-overdue", "1")
+      assert has_element?(lv, "#list-overdue #overdue-#{mine.id}", "My GST return")
+      refute has_element?(lv, "#overdue-#{not_mine.id}")
+      assert has_element?(lv, "#recently-updated #recent-#{mine.id}")
+      refute has_element?(lv, "#list-unassigned")
+      refute has_element?(lv, "#by-organisation")
+      refute has_element?(lv, "#by-person")
+      refute has_element?(lv, "#welcome")
+    end
+
+    test "sees the welcome card with nothing assigned", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+      assert has_element?(lv, "#welcome")
     end
 
     test "cannot open admin-only sections", %{conn: conn} do
