@@ -59,13 +59,14 @@ defmodule DueDeskAdmin.AccountsLive do
                   <th class="px-5 py-3 font-medium">Plan</th>
                   <th class="px-5 py-3 font-medium">Status</th>
                   <th class="px-5 py-3 font-medium">Members</th>
+                  <th class="px-5 py-3 font-medium">Organisations</th>
                   <th class="px-5 py-3 font-medium">Storage</th>
                   <th class="px-5 py-3 font-medium">Created</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line">
                 <tr
-                  :for={%{account: a, member_count: n} <- @accounts}
+                  :for={%{account: a, member_count: n, organisation_count: orgs} <- @accounts}
                   id={"account-#{a.id}"}
                   class="transition hover:bg-[#fafaf9]"
                 >
@@ -77,13 +78,19 @@ defmodule DueDeskAdmin.AccountsLive do
                   </td>
                   <td class="px-5 py-3 text-zinc-600">{String.capitalize(a.status)}</td>
                   <td class="px-5 py-3 tabular-nums text-zinc-600">{n}</td>
+                  <td
+                    id={"account-#{a.id}-organisations"}
+                    class="px-5 py-3 tabular-nums text-zinc-600"
+                  >
+                    {orgs}
+                  </td>
                   <td class="px-5 py-3 tabular-nums text-zinc-600">
                     {Plans.format_bytes(a.storage_used_bytes)}
                   </td>
                   <td class="px-5 py-3 text-zinc-500">{date(a.inserted_at)}</td>
                 </tr>
                 <tr :if={@accounts == []}>
-                  <td colspan="6" class="px-6 py-14 text-center text-zinc-500">
+                  <td colspan="7" class="px-6 py-14 text-center text-zinc-500">
                     No accounts found.
                   </td>
                 </tr>

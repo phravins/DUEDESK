@@ -10,7 +10,7 @@ defmodule DueDesk.Tenancy do
   import Ecto.Query, warn: false
 
   alias Ecto.Multi
-  alias DueDesk.{Audit, Repo}
+  alias DueDesk.{Audit, Categories, Repo}
   alias DueDesk.Accounts.{Scope, User}
   alias DueDesk.Tenancy.{CustomerAccount, Membership}
 
@@ -24,7 +24,8 @@ defmodule DueDesk.Tenancy do
   end
 
   @doc """
-  Creates a Customer Account and makes the scope's user its Super Admin.
+  Creates a Customer Account, makes the scope's user its Super Admin and
+  copies the default categories into it.
 
   Runs in one transaction with the audit event. Returns
   `{:ok, %{customer_account: account, membership: membership}}`.
@@ -46,6 +47,7 @@ defmodule DueDesk.Tenancy do
         whatsapp_consent_at: if(consent?, do: now)
       })
     end)
+    |> Categories.multi_insert_defaults(:categories, & &1.customer_account)
     |> Audit.multi_log(:audit, scope, "account.created", & &1.customer_account,
       customer_account_id: & &1.customer_account.id,
       metadata: %{whatsapp_consent: consent?}

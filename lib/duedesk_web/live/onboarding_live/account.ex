@@ -11,12 +11,7 @@ defmodule DueDeskWeb.OnboardingLive.Account do
   def render(assigns) do
     ~H"""
     <Layouts.auth flash={@flash} current_scope={@current_scope} wide>
-      <ol class="mb-10 flex items-center gap-2 text-xs font-medium" aria-label="Setup progress">
-        <.step state={:done}>Sign up</.step>
-        <.step state={:done}>Verify email</.step>
-        <.step state={:current}>Account</.step>
-        <.step state={:next}>First Organisation</.step>
-      </ol>
+      <.onboarding_steps current={3} />
 
       <.auth_heading title="Set up your DueDesk account" tagline="You'll be its Super Admin.">
         Your account holds your Organisations, DueItems, documents and team.
@@ -55,23 +50,6 @@ defmodule DueDeskWeb.OnboardingLive.Account do
     """
   end
 
-  attr :state, :atom, required: true, values: [:done, :current, :next]
-  slot :inner_block, required: true
-
-  defp step(assigns) do
-    ~H"""
-    <li class="flex min-w-0 flex-1 flex-col gap-2" aria-current={@state == :current && "step"}>
-      <span class={[
-        "h-1 rounded-full",
-        if(@state == :next, do: "bg-[#ececea]", else: "bg-navy")
-      ]} />
-      <span class={["truncate", if(@state == :next, do: "text-zinc-400", else: "text-ink")]}>
-        {render_slot(@inner_block)}
-      </span>
-    </li>
-    """
-  end
-
   @impl true
   def mount(_params, _session, socket) do
     user = socket.assigns.current_scope.user
@@ -95,7 +73,7 @@ defmodule DueDeskWeb.OnboardingLive.Account do
         {:noreply,
          socket
          |> put_flash(:info, "Your DueDesk account is ready.")
-         |> redirect(to: ~p"/dashboard")}
+         |> redirect(to: ~p"/onboarding/organisation")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, form: to_form(changeset, as: "account"))}

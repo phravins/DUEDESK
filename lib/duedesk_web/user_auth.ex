@@ -4,7 +4,7 @@ defmodule DueDeskWeb.UserAuth do
   import Plug.Conn
   import Phoenix.Controller
 
-  alias DueDesk.{Accounts, Tenancy}
+  alias DueDesk.{Accounts, Permissions, Tenancy}
   alias DueDesk.Accounts.Scope
 
   @account_unavailable "This DueDesk account is not available. Please contact support@duedesk.in."
@@ -241,6 +241,18 @@ defmodule DueDeskWeb.UserAuth do
       {:halt, Phoenix.LiveView.redirect(socket, to: ~p"/dashboard")}
     else
       {:cont, socket}
+    end
+  end
+
+  # Administrators and Super Admins only. Runs after `:require_account`.
+  def on_mount(:require_admin, _params, _session, socket) do
+    if Permissions.admin?(socket.assigns.current_scope) do
+      {:cont, socket}
+    else
+      {:halt,
+       socket
+       |> Phoenix.LiveView.put_flash(:error, "This page is not available to your account access.")
+       |> Phoenix.LiveView.push_navigate(to: ~p"/dashboard")}
     end
   end
 

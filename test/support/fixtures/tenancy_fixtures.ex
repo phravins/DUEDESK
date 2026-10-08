@@ -42,4 +42,20 @@ defmodule DueDesk.TenancyFixtures do
 
     Scope.put_membership(Scope.for_user(user), %{membership | customer_account: account})
   end
+
+  @doc """
+  Moves the scope's account to `plan_code` and returns the updated scope.
+  """
+  def put_plan(%Scope{customer_account: account} = scope, plan_code) do
+    account =
+      account
+      |> Ecto.Changeset.change(plan_code: plan_code)
+      |> Repo.update!()
+
+    %{
+      scope
+      | customer_account: account,
+        membership: %{scope.membership | customer_account: account}
+    }
+  end
 end

@@ -1,7 +1,7 @@
 defmodule DueDeskWeb.UIComponents do
   @moduledoc """
-  DueDesk building blocks: page headers, cards, status badges, stat cards,
-  meters, empty states and the auth page heading.
+  DueDesk building blocks: page headers, cards, tabs, status badges, stat
+  cards, meters, empty states, limit notices and the auth page heading.
   """
   use Phoenix.Component
 
@@ -304,6 +304,129 @@ defmodule DueDeskWeb.UIComponents do
       <p :if={@inner_block != []} class="mt-3 text-sm leading-relaxed text-muted">
         {render_slot(@inner_block)}
       </p>
+    </div>
+    """
+  end
+
+  @doc """
+  Underlined tabs that patch the current page.
+
+      <.tabs id="organisation-tabs">
+        <:tab patch={~p"/organisations"} active={@status == "active"} count={3}>Active</:tab>
+      </.tabs>
+  """
+  attr :id, :string, required: true
+
+  slot :tab, required: true do
+    attr :patch, :string, required: true
+    attr :active, :boolean
+    attr :count, :integer
+    attr :id, :string
+  end
+
+  def tabs(assigns) do
+    ~H"""
+    <nav id={@id} class="mb-5 flex gap-6 border-b border-line" aria-label="Tabs">
+      <.link
+        :for={tab <- @tab}
+        id={tab[:id]}
+        patch={tab.patch}
+        aria-current={tab[:active] && "page"}
+        class={[
+          "-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition",
+          if(tab[:active],
+            do: "border-ink text-ink",
+            else: "border-transparent text-zinc-500 hover:text-ink"
+          )
+        ]}
+      >
+        {render_slot(tab)}
+        <span
+          :if={tab[:count]}
+          class={[
+            "rounded-full px-1.5 py-px text-[11px] tabular-nums",
+            if(tab[:active], do: "bg-navy text-white", else: "bg-[#efefed] text-zinc-500")
+          ]}
+        >
+          {tab[:count]}
+        </span>
+      </.link>
+    </nav>
+    """
+  end
+
+  @doc """
+  Shown when a plan limit stops an action. Super Admins get a link to the
+  plans; everyone else is told to ask their Super Admin.
+  """
+  attr :id, :string, default: "limit-notice"
+  attr :message, :string, required: true
+  attr :plans_link, :boolean, default: false
+
+  def limit_notice(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      class="mb-5 flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50/60 p-4 sm:flex-row sm:items-center"
+    >
+      <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+        <.icon name="hero-sparkles-mini" class="size-4" />
+      </span>
+      <p class="min-w-0 flex-1 text-sm text-amber-900">{@message}</p>
+      <.link
+        :if={@plans_link}
+        navigate="/account/plans"
+        class="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-navy px-3 text-[13px] font-medium text-white transition hover:bg-navy-hover"
+      >
+        View Plans <.icon name="hero-arrow-right-mini" class="size-4" />
+      </.link>
+    </div>
+    """
+  end
+
+  @doc """
+  The onboarding progress bar: Sign up, Verify email, Account and First
+  Organisation. `current` is the step number being completed (3 or 4).
+  """
+  attr :current, :integer, required: true
+
+  def onboarding_steps(assigns) do
+    assigns =
+      assign(assigns, :steps, ["Sign up", "Verify email", "Account", "First Organisation"])
+
+    ~H"""
+    <ol class="mb-10 flex items-center gap-2 text-xs font-medium" aria-label="Setup progress">
+      <li
+        :for={{label, number} <- Enum.with_index(@steps, 1)}
+        class="flex min-w-0 flex-1 flex-col gap-2"
+        aria-current={number == @current && "step"}
+      >
+        <span class={[
+          "h-1 rounded-full",
+          if(number > @current, do: "bg-[#ececea]", else: "bg-navy")
+        ]} />
+        <span class={["truncate", if(number > @current, do: "text-zinc-400", else: "text-ink")]}>
+          {label}
+        </span>
+      </li>
+    </ol>
+    """
+  end
+
+  @doc """
+  A label and value row inside a details card.
+  """
+  attr :label, :string, required: true
+  attr :id, :string, default: nil
+  slot :inner_block, required: true
+
+  def detail(assigns) do
+    ~H"""
+    <div id={@id} class="grid gap-1 py-3 sm:grid-cols-3 sm:gap-4">
+      <dt class="text-sm text-muted">{@label}</dt>
+      <dd class="min-w-0 wrap-break-word text-sm text-ink sm:col-span-2">
+        {render_slot(@inner_block)}
+      </dd>
     </div>
     """
   end

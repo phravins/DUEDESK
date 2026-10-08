@@ -47,6 +47,7 @@ defmodule DueDeskAdmin.OperatorConsoleTest do
   test "logs in, audits the login, lists and searches accounts", %{conn: conn, operator: op} do
     a = account_scope_fixture(nil, %{name: "Sharma Group"})
     _b = account_scope_fixture(nil, %{name: "Verma Traders"})
+    DueDesk.OrganisationsFixtures.organisation_fixture(a)
 
     conn = log_in(conn)
     assert redirected_to(conn) == ~p"/admin"
@@ -55,6 +56,7 @@ defmodule DueDeskAdmin.OperatorConsoleTest do
     {:ok, lv, html} = live(recycle(conn), ~p"/admin")
     assert html =~ "Customer Accounts"
     assert has_element?(lv, "#account-#{a.customer_account.id}", "Sharma Group")
+    assert has_element?(lv, "#account-#{a.customer_account.id}-organisations", "1")
     assert html =~ "Verma Traders"
 
     html = lv |> form("#account-search", search: "sharma") |> render_change()

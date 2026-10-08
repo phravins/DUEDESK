@@ -7,9 +7,8 @@ defmodule DueDeskWeb.DashboardLive do
   """
   use DueDeskWeb, :live_view
 
+  alias DueDesk.{Billing, Permissions, Tenancy}
   alias DueDesk.Billing.Plans
-  alias DueDesk.Permissions
-  alias DueDesk.Tenancy
 
   @timeline_days 30
   @dots_per_day 6
@@ -146,7 +145,12 @@ defmodule DueDeskWeb.DashboardLive do
               <% end %>
             </:subtitle>
             <ol :if={@admin?} class="divide-y divide-line rounded-md border border-line">
-              <.setup_step number={1} title="Add an Organisation" navigate={~p"/organisations"} />
+              <.setup_step
+                number={1}
+                title="Add an Organisation"
+                navigate={~p"/organisations"}
+                done={@usage.organisations > 0}
+              />
               <.setup_step number={2} title="Create a DueItem" navigate={~p"/due-items/new"} />
               <.setup_step number={3} title="Invite your team" navigate={~p"/users"} />
             </ol>
@@ -173,14 +177,18 @@ defmodule DueDeskWeb.DashboardLive do
               </span>
             </:action>
             <div class="space-y-5">
-              <.meter label="Organisations" used={0} limit={@plan.max_organisations} />
-              <.meter label="DueItems" used={0} limit={@plan.max_due_items} />
-              <.meter label="Admins & Users" used={@member_count} limit={@plan.max_members} />
+              <.meter
+                label="Organisations"
+                used={@usage.organisations}
+                limit={@plan.max_organisations}
+              />
+              <.meter label="DueItems" used={@usage.due_items} limit={@plan.max_due_items} />
+              <.meter label="Admins & Users" used={@usage.members} limit={@plan.max_members} />
               <.meter
                 label="Storage"
-                used={@current_scope.customer_account.storage_used_bytes}
+                used={@usage.storage_bytes}
                 limit={@plan.storage_bytes}
-                display={"#{Plans.format_bytes(@current_scope.customer_account.storage_used_bytes)} of #{Plans.format_bytes(@plan.storage_bytes)}"}
+                display={"#{Plans.format_bytes(@usage.storage_bytes)} of #{Plans.format_bytes(@plan.storage_bytes)}"}
               />
             </div>
           </.card>
@@ -209,6 +217,7 @@ defmodule DueDeskWeb.DashboardLive do
   attr :number, :integer, required: true
   attr :title, :string, required: true
   attr :navigate, :string, required: true
+  attr :done, :boolean, default: false
 
   defp setup_step(assigns) do
     ~H"""
@@ -217,10 +226,25 @@ defmodule DueDeskWeb.DashboardLive do
         navigate={@navigate}
         class="group flex items-center gap-3 px-4 py-3 transition hover:bg-[#fafaf9]"
       >
-        <span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#efefed] text-xs font-semibold text-zinc-600">
+        <span
+          :if={@done}
+          class="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+          aria-label="Done"
+        >
+          <.icon name="hero-check-mini" class="size-4" />
+        </span>
+        <span
+          :if={!@done}
+          class="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#efefed] text-xs font-semibold text-zinc-600"
+        >
           {@number}
         </span>
-        <span class="min-w-0 flex-1 text-sm font-medium text-ink">{@title}</span>
+        <span class={[
+          "min-w-0 flex-1 text-sm font-medium",
+          if(@done, do: "text-zinc-400 line-through decoration-zinc-300", else: "text-ink")
+        ]}>
+          {@title}
+        </span>
         <.icon
           name="hero-arrow-right-mini"
           class="size-4 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-ink"
@@ -234,19 +258,16 @@ defmodule DueDeskWeb.DashboardLive do
   def mount(_params, _session, socket) do
     scope = socket.assigns.current_scope
     today = Tenancy.today(scope)
-    super_admin? = Permissions.super_admin?(scope)
+    admin? = Permissions.admin?(scope)
 
     {:ok,
      socket
      |> assign(:page_title, "Dashboard")
      |> assign(:today, today)
-     |> assign(:admin?, Permissions.admin?(scope))
-     |> assign(:super_admin?, super_admin?)
-     |> assign(:plan, Plans.get(scope.customer_account.plan_code))
-     |> assign(
-       :member_count,
-       if(super_admin?, do: length(Tenancy.list_memberships(scope)), else: 0)
-     )
+     |> assign(:admin?, admin?)
+     |> assign(:super_admin?, Permissions.super_admin?(scope))
+     |> assign(:plan, Billing.plan(scope))
+     |> assign(:usage, if(admin?, do: Billing.usage(scope), else: %{organisations: 0}))
      |> assign(:counts, %{overdue: 0, due_soon: 0, unassigned: 0, up_to_date: 0})
      |> assign(:timeline, empty_timeline(today))
      |> assign(:timeline_days, @timeline_days)

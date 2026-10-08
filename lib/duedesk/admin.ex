@@ -10,6 +10,7 @@ defmodule DueDesk.Admin do
 
   alias DueDesk.{Audit, Repo}
   alias DueDesk.Admin.Operator
+  alias DueDesk.Organisations.Organisation
   alias DueDesk.Tenancy.{CustomerAccount, Membership}
 
   @doc "Creates an operator. Used by `mix duedesk.create_operator` and seeds."
@@ -44,7 +45,8 @@ defmodule DueDesk.Admin do
   end
 
   @doc """
-  Lists Customer Accounts with member counts, optionally filtered by a
+  Lists Customer Accounts with member and active Organisation counts,
+  optionally filtered by a
   name search.
   """
   def list_customer_accounts(opts \\ []) do
@@ -57,13 +59,26 @@ defmodule DueDesk.Admin do
         select: %{customer_account_id: m.customer_account_id, count: count(m.id)}
       )
 
+    organisation_counts =
+      from(o in Organisation,
+        where: o.status == "active",
+        group_by: o.customer_account_id,
+        select: %{customer_account_id: o.customer_account_id, count: count(o.id)}
+      )
+
     query =
       from(a in CustomerAccount,
         left_join: mc in subquery(member_counts),
         on: mc.customer_account_id == a.id,
+        left_join: oc in subquery(organisation_counts),
+        on: oc.customer_account_id == a.id,
         order_by: [desc: a.inserted_at],
         limit: 200,
-        select: %{account: a, member_count: coalesce(mc.count, 0)}
+        select: %{
+          account: a,
+          member_count: coalesce(mc.count, 0),
+          organisation_count: coalesce(oc.count, 0)
+        }
       )
 
     query =

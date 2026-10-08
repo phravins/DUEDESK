@@ -53,14 +53,21 @@ defmodule DueDeskWeb.Router do
 
       live "/due-items", PlaceholderLive, :due_items
       live "/due-items/new", PlaceholderLive, :new_due_item
-      live "/organisations", PlaceholderLive, :organisations
-      live "/categories", PlaceholderLive, :categories
+      live "/organisations", OrganisationLive.Index, :index
+      live "/organisations/new", OrganisationLive.Form, :new
+      live "/organisations/:id", OrganisationLive.Show, :show
+      live "/organisations/:id/edit", OrganisationLive.Form, :edit
+      live "/categories", CategoryLive.Index, :index
       live "/users", PlaceholderLive, :users
       live "/account", PlaceholderLive, :account
+      live "/account/plans", AccountLive.Plans, :index
       live "/support", PlaceholderLive, :support
 
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
+
+      # Onboarding step 4: the account exists by now.
+      live "/onboarding/organisation", OnboardingLive.Organisation, :new
     end
 
     # Onboarding: signed in, but no Customer Account yet.

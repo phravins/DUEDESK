@@ -3,17 +3,17 @@
 #     mix run priv/repo/seeds.exs   (also run by mix ecto.setup / ecto.reset)
 #
 # Creates one operator and three Customer Accounts (Free, Business,
-# Entrepreneur) with a Super Admin, an Administrator and a User each.
+# Entrepreneur) with a Super Admin, an Administrator and a User each, and
+# Organisations of every type. The Free account is at its Organisation limit.
 # Passwords are generated on every run and printed once to this console.
 # Existing records are left alone, so running it twice is safe.
 #
-# Later phases add Organisations, DueItems in every status, documents and
-# reminders here.
+# Later phases add DueItems in every status, documents and reminders here.
 
 if Mix.env() != :dev do
   IO.puts("Seeds create demo logins and only run in the dev environment. Skipping.")
 else
-  alias DueDesk.{Accounts, Admin, Repo, Tenancy}
+  alias DueDesk.{Accounts, Admin, Organisations, Repo, Tenancy}
   alias DueDesk.Accounts.{Scope, User}
   alias DueDesk.Admin.Operator
   alias DueDesk.Tenancy.Membership
@@ -54,6 +54,26 @@ else
     {"business", "Verma Industries", "verma"},
     {"entrepreneur", "Iyer Group", "iyer"}
   ]
+
+  organisations = %{
+    "sharma" => [
+      %{name: "Sharma Traders", type: "proprietorship", identifier: "UDYAM-DL-07-0012345"}
+    ],
+    "verma" => [
+      %{name: "Verma Industries LLP", type: "llp", identifier: "AAB-1234"},
+      %{
+        name: "Verma Auto Components Pvt Ltd",
+        type: "private_limited",
+        identifier: "U29100MH2015PTC123456",
+        gstin: "27AAPFU0939F1ZV"
+      }
+    ],
+    "iyer" => [
+      %{name: "Iyer & Sons", type: "partnership", identifier: "UDYAM-TN-02-0045678"},
+      %{name: "Iyer Foods Pvt Ltd", type: "private_limited", identifier: "U15400TN2018PTC234567"},
+      %{name: "Iyer Logistics LLP", type: "llp", identifier: "AAC-5678"}
+    ]
+  }
 
   logins =
     Enum.reduce(accounts, logins, fn {plan, account_name, slug}, logins ->
@@ -104,6 +124,20 @@ else
         %Membership{customer_account_id: account.id, user_id: user.id}
         |> Membership.changeset(%{role: role, status: "active"})
         |> Repo.insert!()
+      end
+
+      # Re-read the membership so the scope sees the updated plan.
+      owner_scope =
+        Scope.put_membership(Scope.for_user(owner), Tenancy.get_current_membership(owner))
+
+      if Organisations.count_by_status(owner_scope) == %{active: 0, archived: 0} do
+        for attrs <- Map.fetch!(organisations, slug) do
+          {:ok, _} =
+            Organisations.create_organisation(
+              owner_scope,
+              Map.put(attrs, :declaration_accepted, true)
+            )
+        end
       end
 
       label = "#{account_name} (#{plan})"
