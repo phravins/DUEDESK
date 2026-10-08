@@ -112,6 +112,56 @@ defmodule DueDeskWeb.DueItemLive.IndexTest do
       refute has_element?(lv, row(unassigned))
     end
 
+    test "the Awaiting action tab", %{conn: conn, scope: scope} do
+      waiting = due_item_fixture(scope, title: "Pest control")
+      active = due_item_fixture(scope)
+      {:ok, _} = DueItems.complete_due_item(scope, waiting, %{})
+
+      {:ok, lv, _html} = live(conn, ~p"/due-items")
+      refute has_element?(lv, row(waiting))
+      assert has_element?(lv, "#tab-awaiting", "1")
+
+      lv |> element("#tab-awaiting") |> render_click()
+      assert_patch(lv, ~p"/due-items?view=awaiting")
+      assert has_element?(lv, row(waiting), "Awaiting action")
+      refute has_element?(lv, row(active))
+    end
+
+    test "the Renewal reviews tab lists Users' renewals until dismissed", %{
+      conn: conn,
+      scope: scope
+    } do
+      member = member_scope_fixture(scope, "user")
+
+      item =
+        due_item_fixture(scope,
+          title: "Shop licence",
+          recurrence: "annual",
+          primary_user_id: member.user.id
+        )
+
+      {:ok, _} = DueItems.renew_due_item(member, item, %{})
+      cycle_id = item.current_cycle.id
+
+      {:ok, lv, _html} = live(conn, ~p"/due-items")
+      assert has_element?(lv, "#tab-reviews", "1")
+
+      lv |> element("#tab-reviews") |> render_click()
+      assert_patch(lv, ~p"/due-items?view=reviews")
+
+      assert has_element?(lv, "#renewal_reviews-#{cycle_id}", "Shop licence")
+      assert has_element?(lv, "#renewal_reviews-#{cycle_id}", member.user.name)
+      assert has_element?(lv, "#review-#{cycle_id}")
+      assert has_element?(lv, "#edit-dates-#{cycle_id}")
+      refute has_element?(lv, "#due-item-filters")
+
+      lv |> element("#dismiss-#{cycle_id}") |> render_click()
+
+      refute has_element?(lv, "#renewal_reviews-#{cycle_id}")
+      assert has_element?(lv, "#renewal-reviews-empty")
+      assert DueItems.count_renewal_reviews(scope) == 0
+    end
+
     test "loads more past the first page", %{conn: conn, scope: scope} do
       scope = put_plan(scope, "entrepreneur")
       organisation = organisation_fixture(scope)
@@ -180,6 +230,19 @@ defmodule DueDeskWeb.DueItemLive.IndexTest do
 
       {:ok, lv, _html} = live(conn, ~p"/due-items?assignment=unassigned")
       refute has_element?(lv, row(unassigned))
+
+      completed = due_item_fixture(admin, primary_user_id: scope.user.id)
+      {:ok, _} = DueItems.complete_due_item(scope, completed, %{})
+
+      {:ok, lv, _html} = live(conn, ~p"/due-items?view=awaiting")
+      refute has_element?(lv, row(completed))
+
+      renewed = due_item_fixture(admin, recurrence: "annual", primary_user_id: scope.user.id)
+      {:ok, _} = DueItems.renew_due_item(scope, renewed, %{})
+
+      {:ok, lv, _html} = live(conn, ~p"/due-items?view=reviews")
+      refute has_element?(lv, "#renewal-reviews")
+      assert has_element?(lv, row(renewed))
     end
   end
 end

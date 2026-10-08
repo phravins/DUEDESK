@@ -66,7 +66,41 @@ defmodule DueDesk.Audit.Humanize do
 
   defp sentence("due_item.created", _changes, _meta, _names), do: {"created this DueItem", []}
   defp sentence("due_item.archived", _changes, _meta, _names), do: {"archived this DueItem", []}
-  defp sentence("due_item.restored", _changes, _meta, _names), do: {"restored this DueItem", []}
+
+  defp sentence("due_item.restored", changes, _meta, names),
+    do: {"restored this DueItem", reactivation_details(changes, names)}
+
+  defp sentence("due_item.reactivated", changes, _meta, names),
+    do: {"re-dated and reactivated this DueItem", reactivation_details(changes, names)}
+
+  defp sentence("due_item.renewed", changes, meta, _names) do
+    next =
+      cond do
+        meta["next_dates"] == "pending" ->
+          "New dates are needed from an Administrator"
+
+        match?([_, new] when is_binary(new), changes["due_date"]) ->
+          "Next Due Date #{value("due_date", List.last(changes["due_date"]))}"
+
+        match?([_, new] when is_binary(new), changes["expiry_date"]) ->
+          "Next Expiry Date #{value("expiry_date", List.last(changes["expiry_date"]))}"
+
+        true ->
+          nil
+      end
+
+    {Enum.join(Enum.reject(["renewed this DueItem", next], &is_nil/1), ". "), []}
+  end
+
+  defp sentence("due_item.completed", _changes, _meta, _names),
+    do: {"marked this DueItem as completed", []}
+
+  defp sentence("due_item.renewal_reviewed", _changes, _meta, _names),
+    do: {"reviewed the renewal", []}
+
+  defp sentence("due_item.deleted", _changes, meta, _names),
+    do: {"permanently deleted \u201c#{meta["title"]}\u201d", []}
+
   defp sentence("note.added", _changes, _meta, _names), do: {"added a note", []}
 
   defp sentence("due_item.updated", changes, _meta, _names) do
@@ -83,6 +117,35 @@ defmodule DueDesk.Audit.Humanize do
   end
 
   defp sentence("due_item.assigned", changes, _meta, names) do
+    case assignment_phrases(changes, names) do
+      [] -> {"changed responsibility", []}
+      phrases -> {join(phrases), []}
+    end
+  end
+
+  defp sentence("due_item.status_overridden", changes, meta, _names) do
+    [old, new] = Map.get(changes, "status", [nil, nil])
+    reason = meta["reason"]
+
+    {"changed the status from #{status_label(old)} to #{status_label(new)}",
+     if(reason, do: ["Reason: #{reason}"], else: [])}
+  end
+
+  defp sentence("due_item.status_override_cleared", _changes, _meta, _names),
+    do: {"removed the status override", []}
+
+  defp sentence(action, _changes, _meta, _names), do: {"recorded #{action}", []}
+
+  defp reactivation_details(changes, names) do
+    dates =
+      for field <- @field_order, Map.has_key?(changes, field) do
+        change_phrase(field, Map.fetch!(changes, field))
+      end
+
+    Enum.map(dates ++ assignment_phrases(changes, names), &capitalize/1)
+  end
+
+  defp assignment_phrases(changes, names) do
     primary =
       case changes["primary"] do
         [_old, new] when is_binary(new) ->
@@ -105,24 +168,8 @@ defmodule DueDesk.Audit.Humanize do
           []
       end
 
-    case primary ++ additional do
-      [] -> {"changed responsibility", []}
-      phrases -> {join(phrases), []}
-    end
+    primary ++ additional
   end
-
-  defp sentence("due_item.status_overridden", changes, meta, _names) do
-    [old, new] = Map.get(changes, "status", [nil, nil])
-    reason = meta["reason"]
-
-    {"changed the status from #{status_label(old)} to #{status_label(new)}",
-     if(reason, do: ["Reason: #{reason}"], else: [])}
-  end
-
-  defp sentence("due_item.status_override_cleared", _changes, _meta, _names),
-    do: {"removed the status override", []}
-
-  defp sentence(action, _changes, _meta, _names), do: {"recorded #{action}", []}
 
   defp change_phrase("description", _), do: "changed the Description"
 

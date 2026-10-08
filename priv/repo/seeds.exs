@@ -7,7 +7,8 @@
 # Organisations of every type. The Free account is at its Organisation limit.
 # Each account gets DueItems in every status: overdue, due soon, up to date,
 # an overridden status, an unassigned item, recurring items, an archived item
-# and notes. Some are assigned to the demo User and some are not, so the
+# and notes, a User's renewal awaiting review and a completed DueItem
+# awaiting an Administrator's decision. Some are assigned to the demo User and some are not, so the
 # visibility rule can be seen. The Free account stays within its DueItem limit.
 # Passwords are generated on every run and printed once to this console.
 # Existing records are left alone, so running it twice is safe.
@@ -186,6 +187,74 @@ else
     end
   end
 
+  # Phase 3 lifecycle examples, each added once by title so re-running the
+  # seeds on an existing database adds them: a renewal by the User that
+  # waits for an Administrator's review, and a completed one-off DueItem
+  # awaiting a decision.
+  seed_lifecycle = fn owner_scope, member ->
+    account_id = Scope.account_id!(owner_scope)
+    today = Tenancy.today(owner_scope)
+    organisations = Organisations.list_organisations(owner_scope)
+    categories = Categories.list_categories(owner_scope, status: "active")
+
+    member_scope =
+      Scope.put_membership(Scope.for_user(member), Tenancy.get_current_membership(member))
+
+    category_id = fn name ->
+      (Enum.find(categories, &(&1.name == name)) || List.last(categories)).id
+    end
+
+    missing? = fn title ->
+      not Repo.exists?(
+        from(i in DueItem, where: i.customer_account_id == ^account_id and i.title == ^title)
+      )
+    end
+
+    create = fn attrs ->
+      {:ok, item} =
+        DueItems.create_due_item(
+          owner_scope,
+          Map.merge(
+            %{
+              "organisation_id" => List.first(organisations).id,
+              "primary_user_id" => member.id
+            },
+            attrs
+          )
+        )
+
+      {:ok, item} = DueItems.get_due_item(member_scope, item.id)
+      item
+    end
+
+    if organisations != [] and missing?.("Professional tax (PTEC)") do
+      item =
+        create.(%{
+          "title" => "Professional tax (PTEC)",
+          "category_id" => category_id.("GST & Income Tax"),
+          "due_date" => Date.to_iso8601(Date.add(today, -340)),
+          "recurrence" => "annual"
+        })
+
+      {:ok, _} =
+        DueItems.renew_due_item(member_scope, item, %{
+          "completed_on" => Date.to_iso8601(Date.add(today, -2)),
+          "note" => "Paid on the Mahakosh portal."
+        })
+    end
+
+    if organisations != [] and missing?.("Office pest control contract") do
+      item =
+        create.(%{
+          "title" => "Office pest control contract",
+          "category_id" => category_id.("Property & Rent"),
+          "due_date" => Date.to_iso8601(Date.add(today, 3))
+        })
+
+      {:ok, _} = DueItems.complete_due_item(member_scope, item, %{"completed_on" => today})
+    end
+  end
+
   logins =
     Enum.reduce(accounts, logins, fn {plan, account_name, slug}, logins ->
       {owner, owner_pw} =
@@ -252,6 +321,7 @@ else
       end
 
       seed_due_items.(owner_scope, admin, member)
+      seed_lifecycle.(owner_scope, member)
 
       label = "#{account_name} (#{plan})"
 

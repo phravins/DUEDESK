@@ -117,7 +117,7 @@ defmodule DueDeskWeb.DueItemLive.ShowTest do
       refute has_element?(lv, "#status-override")
     end
 
-    test "archives and restores", %{conn: conn, scope: scope} do
+    test "archives; Restore opens the review page", %{conn: conn, scope: scope} do
       item = due_item_fixture(scope)
       {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
 
@@ -125,28 +125,103 @@ defmodule DueDeskWeb.DueItemLive.ShowTest do
 
       assert has_element?(lv, "#archived-banner")
       assert has_element?(lv, "#restore-due-item")
+      assert has_element?(lv, "#delete-due-item")
       refute has_element?(lv, "#edit-due-item")
+      refute has_element?(lv, "#complete-due-item")
       refute has_element?(lv, "#note-form")
       assert reload(scope, item).status == "archived"
 
-      lv |> element("#restore-due-item") |> render_click()
+      {:ok, review, _html} =
+        lv
+        |> element("#restore-due-item")
+        |> render_click()
+        |> follow_redirect(conn, ~p"/due-items/#{item}/reactivate")
 
-      refute has_element?(lv, "#archived-banner")
-      assert has_element?(lv, "#archive-due-item")
-      assert reload(scope, item).status == "active"
-      assert has_element?(lv, "#history", "restored this DueItem")
+      assert has_element?(review, "#reactivate-form")
     end
 
-    test "restore is blocked at the plan limit", %{conn: conn, scope: scope} do
-      archived = due_item_fixture(scope)
-      {:ok, _} = DueItems.archive_due_item(scope, archived)
-      for _ <- 1..10, do: due_item_fixture(scope)
+    test "deletes an archived DueItem after typing its title", %{conn: conn, scope: scope} do
+      item = due_item_fixture(scope, title: "Old fire NOC")
+      {:ok, _} = DueItems.archive_due_item(scope, item)
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
 
-      {:ok, lv, _html} = live(conn, ~p"/due-items/#{archived}")
-      lv |> element("#restore-due-item") |> render_click()
+      lv |> element("#delete-due-item") |> render_click()
+      assert has_element?(lv, "#delete-form")
 
-      assert has_element?(lv, "#limit-notice")
-      assert reload(scope, archived).status == "archived"
+      lv |> form("#delete-form", %{"delete" => %{"title" => "Old fire"}}) |> render_submit()
+      assert has_element?(lv, "#delete-form", "type the title exactly as shown")
+      assert reload(scope, item).status == "archived"
+
+      {:ok, list, _html} =
+        lv
+        |> form("#delete-form", %{"delete" => %{"title" => "Old fire NOC"}})
+        |> render_submit()
+        |> follow_redirect(conn, ~p"/due-items?view=archived")
+
+      assert has_element?(list, "#flash-info", "DueItem permanently deleted.")
+      assert DueDesk.Repo.get(DueItem, item.id) == nil
+    end
+
+    test "renews a recurring DueItem and shows the previous cycle", %{conn: conn, scope: scope} do
+      item = due_item_fixture(scope, recurrence: "monthly", due_date: "2027-01-31")
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
+
+      assert has_element?(lv, "#renew-due-item")
+      refute has_element?(lv, "#complete-due-item")
+      refute has_element?(lv, "#due-item-cycles")
+
+      {:ok, _} = DueItems.renew_due_item(scope, item, %{"note" => "Filed online"})
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
+
+      assert has_element?(lv, "#due-item-due-date", "28 Feb 2027")
+      assert has_element?(lv, "#cycles #cycle-#{item.current_cycle.id}", "Filed online")
+      assert has_element?(lv, "#history", "renewed this DueItem")
+      # A Super Admin's renewal is already reviewed.
+      refute has_element?(lv, "#renewal-review")
+    end
+
+    test "marks a User's renewal as reviewed", %{conn: conn, scope: scope} do
+      member = member_scope_fixture(scope, "user")
+
+      item =
+        due_item_fixture(scope,
+          recurrence: "annual",
+          due_date: days_from_today(scope, 5),
+          primary_user_id: member.user.id
+        )
+
+      {:ok, _} = DueItems.renew_due_item(member, item, %{})
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
+
+      assert has_element?(lv, "#renewal-review", member.user.name)
+      lv |> element("#dismiss-review") |> render_click()
+
+      refute has_element?(lv, "#renewal-review")
+      assert DueItems.count_renewal_reviews(scope) == 0
+    end
+
+    test "a completed DueItem waits with Archive and Re-date", %{conn: conn, scope: scope} do
+      item = due_item_fixture(scope)
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
+      assert has_element?(lv, "#complete-due-item")
+      refute has_element?(lv, "#renew-due-item")
+
+      {:ok, _} = DueItems.complete_due_item(scope, item, %{})
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
+
+      assert has_element?(lv, "#due-item-status", "Awaiting action")
+      assert has_element?(lv, "#awaiting-banner")
+      assert has_element?(lv, "#reactivate-due-item", "Re-date and reactivate")
+      refute has_element?(lv, "#complete-due-item")
+      refute has_element?(lv, "#edit-due-item")
+      refute has_element?(lv, "#archive-due-item")
+      refute has_element?(lv, "#open-override")
+
+      lv |> element("#archive-awaiting") |> render_click()
+
+      assert has_element?(lv, "#archived-banner")
+      refute has_element?(lv, "#awaiting-banner")
+      assert reload(scope, item).disposition_state == nil
     end
 
     test "adds a note without putting its text in the audit log", %{conn: conn, scope: scope} do
@@ -176,6 +251,22 @@ defmodule DueDeskWeb.DueItemLive.ShowTest do
     end
   end
 
+  describe "as Administrator" do
+    setup :register_and_log_in_admin
+
+    test "restores but cannot delete an archived DueItem", %{conn: conn, scope: scope} do
+      item = due_item_fixture(scope)
+      {:ok, _} = DueItems.archive_due_item(scope, item)
+      {:ok, lv, _html} = live(conn, ~p"/due-items/#{item}")
+
+      assert has_element?(lv, "#restore-due-item")
+      refute has_element?(lv, "#delete-due-item")
+
+      render_click(lv, "open_panel", %{"panel" => "delete"})
+      refute has_element?(lv, "#delete-form")
+    end
+  end
+
   describe "as User" do
     setup :register_and_log_in_account_user
 
@@ -193,6 +284,7 @@ defmodule DueDeskWeb.DueItemLive.ShowTest do
       refute has_element?(lv, "#archive-due-item")
       refute has_element?(lv, "#open-override")
       refute has_element?(lv, "#open-assign")
+      assert has_element?(lv, "#complete-due-item")
     end
 
     test "admin-only events do nothing", %{conn: conn, scope: scope, admin: admin} do

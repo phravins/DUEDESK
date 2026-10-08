@@ -32,6 +32,18 @@ defmodule DueDeskWeb.UIComponents do
       class: "bg-zinc-100 text-zinc-600 ring-zinc-200",
       dot: "bg-zinc-400"
     },
+    awaiting: %{
+      label: "Awaiting action",
+      icon: "hero-inbox-arrow-down-mini",
+      class: "bg-violet-50 text-violet-700 ring-violet-200/70",
+      dot: "bg-violet-500"
+    },
+    needs_dates: %{
+      label: "Needs new dates",
+      icon: "hero-calendar-mini",
+      class: "bg-violet-50 text-violet-700 ring-violet-200/70",
+      dot: "bg-violet-500"
+    },
     unassigned: %{
       label: "Unassigned",
       icon: "hero-user-minus-mini",

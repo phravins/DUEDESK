@@ -64,8 +64,19 @@ defmodule DueDesk.DueItems.Queries do
     end
   end
 
-  @doc "Only active (not archived) DueItems."
-  def active(query), do: where(query, [item: i], i.status == "active")
+  @doc """
+  Only active DueItems: not archived and not waiting for an
+  Administrator's decision.
+  """
+  def active(query),
+    do: where(query, [item: i], i.status == "active" and is_nil(i.disposition_state))
+
+  @doc """
+  Only DueItems waiting for an Administrator: completed (non-recurring)
+  or renewed without next dates.
+  """
+  def awaiting(query),
+    do: where(query, [item: i], i.status == "active" and not is_nil(i.disposition_state))
 
   @doc "Only DueItems without an active Primary Responsible."
   def unassigned(query) do
@@ -91,8 +102,9 @@ defmodule DueDesk.DueItems.Queries do
   @doc """
   Applies list filters from string-keyed params:
 
-    * `"view"` - `"archived"` for archived items (Administrators only),
-      anything else for active items
+    * `"view"` - `"archived"` for archived items or `"awaiting"` for items
+      waiting for an Administrator (Administrators only), anything else
+      for active items
     * `"q"` - search in title, reference number, related party,
       Organisation and category names
     * `"status"` - `overdue`, `due_soon` or `up_to_date`
@@ -102,12 +114,14 @@ defmodule DueDesk.DueItems.Queries do
     * `"due_from"`, `"due_to"`, `"expiry_from"`, `"expiry_to"` - ISO dates
   """
   def filter(query, params, %Scope{} = scope, today, soon_until) do
-    archived? = params["view"] == "archived" and Permissions.can_view_all_due_items?(scope)
+    view = if Permissions.can_view_all_due_items?(scope), do: params["view"], else: nil
 
     query =
-      if archived?,
-        do: where(query, [item: i], i.status == "archived"),
-        else: active(query)
+      case view do
+        "archived" -> where(query, [item: i], i.status == "archived")
+        "awaiting" -> awaiting(query)
+        _ -> active(query)
+      end
 
     Enum.reduce(params, query, fn
       {"q", term}, q ->

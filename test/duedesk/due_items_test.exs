@@ -191,7 +191,10 @@ defmodule DueDesk.DueItemsTest do
       assert Billing.usage(scope).due_items == 9
       due_item_fixture(scope)
 
-      assert {:error, {:limit_reached, _}} = DueItems.restore_due_item(scope, archived)
+      assert {:error, {:limit_reached, _}} =
+               DueItems.reactivate_due_item(scope, archived, %{
+                 "due_date" => days_from_today(scope, 30)
+               })
     end
   end
 
@@ -499,12 +502,13 @@ defmodule DueDesk.DueItemsTest do
       assert {:ok, archived} = DueItems.archive_due_item(ctx.admin, item)
       assert archived.status == "archived"
       assert {:error, :not_active} = DueItems.archive_due_item(ctx.admin, archived)
-      assert {:ok, restored} = DueItems.restore_due_item(ctx.admin, archived)
+      attrs = %{"due_date" => days_from_today(ctx.admin, 30)}
+      assert {:ok, restored} = DueItems.reactivate_due_item(ctx.admin, archived, attrs)
       assert restored.status == "active"
-      assert {:error, :not_archived} = DueItems.restore_due_item(ctx.admin, restored)
+      assert {:error, :not_inactive} = DueItems.reactivate_due_item(ctx.admin, restored, attrs)
 
-      assert Enum.map(events(item), & &1.action) ==
-               ["due_item.created", "due_item.archived", "due_item.restored"]
+      assert item |> events() |> Enum.map(& &1.action) |> Enum.sort() ==
+               ["due_item.archived", "due_item.created", "due_item.restored"]
     end
   end
 

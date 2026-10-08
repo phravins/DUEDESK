@@ -70,6 +70,31 @@ defmodule DueDeskWeb.DashboardLiveTest do
       assert has_element?(lv, "#capacity", "3 of 10")
     end
 
+    test "shows the queues waiting for an Administrator and recent completions", %{
+      conn: conn,
+      scope: scope
+    } do
+      member = member_scope_fixture(scope, "user")
+      one_off = due_item_fixture(scope, title: "Pest control", primary_user_id: member.user.id)
+      yearly = due_item_fixture(scope, recurrence: "annual", primary_user_id: member.user.id)
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+      assert has_element?(lv, "#card-awaiting", "0")
+      assert has_element?(lv, "#card-reviews", "0")
+      refute has_element?(lv, "#recently-completed")
+
+      {:ok, _} = DueItems.complete_due_item(member, one_off, %{})
+      {:ok, _} = DueItems.renew_due_item(member, yearly, %{})
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+      assert has_element?(lv, ~s|#card-awaiting a[href="/due-items?view=awaiting"]|, "1")
+      assert has_element?(lv, ~s|#card-reviews a[href="/due-items?view=reviews"]|, "1")
+      assert has_element?(lv, "#completed-#{one_off.current_cycle.id}", "Pest control")
+      assert has_element?(lv, "#completed-#{yearly.current_cycle.id}")
+      # The completed one-off no longer appears among the active DueItems.
+      refute has_element?(lv, "#unassigned-#{one_off.id}")
+    end
+
     test "status cards link to the filtered DueItems list", %{conn: conn} do
       {:ok, lv, _html} = live(conn, ~p"/dashboard")
       assert has_element?(lv, ~s|#card-overdue[href="/due-items?status=overdue"]|)
@@ -133,6 +158,21 @@ defmodule DueDeskWeb.DashboardLiveTest do
       refute has_element?(lv, "#by-organisation")
       refute has_element?(lv, "#by-person")
       refute has_element?(lv, "#welcome")
+      refute has_element?(lv, "#admin-queues")
+    end
+
+    test "sees their own recent renewals", %{conn: conn, scope: scope} do
+      admin = member_scope_fixture(scope, "admin")
+      item = due_item_fixture(admin, recurrence: "annual", primary_user_id: scope.user.id)
+      {:ok, _} = DueItems.renew_due_item(scope, item, %{})
+
+      other = member_scope_fixture(scope, "user")
+      theirs = due_item_fixture(admin, recurrence: "annual", primary_user_id: other.user.id)
+      {:ok, _} = DueItems.renew_due_item(other, theirs, %{})
+
+      {:ok, lv, _html} = live(conn, ~p"/dashboard")
+      assert has_element?(lv, "#completed-#{item.current_cycle.id}")
+      refute has_element?(lv, "#completed-#{theirs.current_cycle.id}")
     end
 
     test "sees the welcome card with nothing assigned", %{conn: conn} do

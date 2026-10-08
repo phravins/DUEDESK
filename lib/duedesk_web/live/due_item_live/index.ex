@@ -2,8 +2,9 @@ defmodule DueDeskWeb.DueItemLive.Index do
   @moduledoc """
   The DueItems list (UX spec §20). Filters live in the query string, so
   dashboard cards and the sidebar search link straight to a filtered
-  list. Administrators see every DueItem with Unassigned and Archived
-  tabs; Users see the DueItems they are responsible for.
+  list. Administrators see every DueItem with Unassigned, Awaiting
+  action, Renewal reviews and Archived tabs; Users see the DueItems they
+  are responsible for.
   """
   use DueDeskWeb, :live_view
 
@@ -52,12 +53,29 @@ defmodule DueDeskWeb.DueItemLive.Index do
         >
           Unassigned
         </:tab>
+        <:tab
+          id="tab-awaiting"
+          patch={tab_path(@params, :awaiting)}
+          active={@tab == :awaiting}
+          count={@awaiting_count}
+        >
+          Awaiting action
+        </:tab>
+        <:tab
+          id="tab-reviews"
+          patch={tab_path(@params, :reviews)}
+          active={@tab == :reviews}
+          count={@reviews_count}
+        >
+          Renewal reviews
+        </:tab>
         <:tab id="tab-archived" patch={tab_path(@params, :archived)} active={@tab == :archived}>
           Archived
         </:tab>
       </.tabs>
 
       <.form
+        :if={@tab != :reviews}
         for={@filter_form}
         id="due-item-filters"
         phx-change="filter"
@@ -76,7 +94,7 @@ defmodule DueDeskWeb.DueItemLive.Index do
               class={filter_class("pl-9")}
             />
           </div>
-          <div :if={@tab != :archived} class="sm:w-40">
+          <div :if={@tab not in [:archived, :awaiting]} class="sm:w-40">
             <.input
               field={@filter_form[:status]}
               type="select"
@@ -166,8 +184,75 @@ defmodule DueDeskWeb.DueItemLive.Index do
         </div>
       </.form>
 
+      <ul
+        :if={@tab == :reviews}
+        id="renewal-reviews"
+        phx-update="stream"
+        class="divide-y divide-line overflow-hidden rounded-lg border border-line bg-white"
+      >
+        <li id="renewal-reviews-empty" class="hidden px-6 py-12 text-center only:block">
+          <span class="mx-auto flex size-10 items-center justify-center rounded-full bg-[#efefed] text-zinc-500">
+            <.icon name="hero-check-badge" class="size-5" />
+          </span>
+          <p class="mt-3 text-sm font-medium text-ink">No renewals to review</p>
+          <p class="mt-1 text-sm text-muted">
+            When a User renews a DueItem, it appears here so you can check the new dates.
+          </p>
+        </li>
+        <li
+          :for={{dom_id, cycle} <- @streams.renewal_reviews}
+          id={dom_id}
+          class="flex flex-col gap-3 px-4 py-3.5 md:flex-row md:items-center md:gap-4"
+        >
+          <div class="min-w-0 flex-1">
+            <.link
+              navigate={~p"/due-items/#{cycle.due_item}"}
+              class="block truncate text-sm font-medium text-ink hover:underline hover:underline-offset-2"
+            >
+              {cycle.due_item.title}
+            </.link>
+            <p class="truncate text-xs text-muted">
+              {cycle.due_item.organisation.name} · Renewed by {renewed_by(cycle)} on {date(
+                cycle.completed_on
+              )}
+            </p>
+          </div>
+          <span class="shrink-0 text-sm tabular-nums text-zinc-700">
+            {next_dates_label(cycle.due_item)}
+          </span>
+          <div class="flex shrink-0 flex-wrap gap-2">
+            <.button
+              id={"review-#{cycle.id}"}
+              size="sm"
+              variant="outline"
+              navigate={~p"/due-items/#{cycle.due_item}"}
+            >
+              Review
+            </.button>
+            <.button
+              :if={is_nil(cycle.due_item.disposition_state)}
+              id={"edit-dates-#{cycle.id}"}
+              size="sm"
+              variant="outline"
+              navigate={~p"/due-items/#{cycle.due_item}/edit"}
+            >
+              Edit dates
+            </.button>
+            <.button
+              id={"dismiss-#{cycle.id}"}
+              size="sm"
+              variant="ghost"
+              phx-click="dismiss_review"
+              phx-value-id={cycle.id}
+            >
+              Dismiss
+            </.button>
+          </div>
+        </li>
+      </ul>
+
       <.empty_state
-        :if={@empty?}
+        :if={@empty? and @tab != :reviews}
         id="due-items-empty"
         icon={if @filtered?, do: "hero-funnel", else: "hero-clipboard-document-list"}
         title={empty_title(@tab, @filtered?, @admin?)}
@@ -183,7 +268,10 @@ defmodule DueDeskWeb.DueItemLive.Index do
         </:action>
       </.empty_state>
 
-      <div :if={!@empty?} class="overflow-hidden rounded-lg border border-line bg-white">
+      <div
+        :if={!@empty? and @tab != :reviews}
+        class="overflow-hidden rounded-lg border border-line bg-white"
+      >
         <div class="hidden border-b border-line bg-[#fafaf9] px-4 py-3 text-xs font-medium text-zinc-500 md:grid md:grid-cols-[minmax(0,2.4fr)_minmax(0,1.3fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_6.5rem_6.5rem_8.5rem] md:gap-4">
           <span>DueItem</span>
           <span>Organisation</span>
@@ -271,6 +359,8 @@ defmodule DueDeskWeb.DueItemLive.Index do
       |> assign(:admin?, admin?)
       |> assign(:today, Tenancy.today(scope))
       |> assign(:due_soon_days, scope.customer_account.due_soon_days)
+      |> stream(:due_items, [])
+      |> stream(:renewal_reviews, [])
 
     socket =
       if admin? do
@@ -294,12 +384,13 @@ defmodule DueDeskWeb.DueItemLive.Index do
   @impl true
   def handle_params(params, _uri, socket) do
     params = clean(params)
-    scope = socket.assigns.current_scope
 
     tab =
       cond do
         !socket.assigns.admin? -> :active
         params["view"] == "archived" -> :archived
+        params["view"] == "awaiting" -> :awaiting
+        params["view"] == "reviews" -> :reviews
         params["assignment"] == "unassigned" -> :unassigned
         true -> :active
       end
@@ -314,11 +405,8 @@ defmodule DueDeskWeb.DueItemLive.Index do
       |> assign(:more_count, map_size(Map.take(filters, @more_filter_keys)))
       |> assign(:filter_form, to_form(filters))
       |> assign(:offset, 0)
-      |> assign(
-        :unassigned_count,
-        if(socket.assigns.admin?, do: DueItems.count_by_status(scope).unassigned)
-      )
-      |> load_page(reset: true)
+      |> assign_counts()
+      |> load_tab()
 
     {:noreply, socket}
   end
@@ -327,7 +415,9 @@ defmodule DueDeskWeb.DueItemLive.Index do
   def handle_event("filter", form_params, socket) do
     filters = form_params |> Map.take(@filter_keys) |> clean()
     tab = Map.take(socket.assigns.params, @tab_keys)
-    filters = if tab["view"] == "archived", do: Map.delete(filters, "status"), else: filters
+
+    filters =
+      if tab["view"] in ["archived", "awaiting"], do: Map.delete(filters, "status"), else: filters
 
     {:noreply, push_patch(socket, to: list_path(Map.merge(tab, filters)))}
   end
@@ -336,12 +426,51 @@ defmodule DueDeskWeb.DueItemLive.Index do
     {:noreply, push_patch(socket, to: list_path(Map.take(socket.assigns.params, @tab_keys)))}
   end
 
+  def handle_event("dismiss_review", %{"id" => id}, socket) do
+    case DueItems.dismiss_renewal_review(socket.assigns.current_scope, id) do
+      {:ok, cycle} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Renewal marked as reviewed.")
+         |> stream_delete(:renewal_reviews, cycle)
+         |> assign_counts()}
+
+      {:error, _} ->
+        {:noreply, socket}
+    end
+  end
+
   def handle_event("load_more", _params, socket) do
     {:noreply,
      socket
      |> update(:offset, &(&1 + DueItems.per_page()))
      |> load_page(reset: false)}
   end
+
+  defp assign_counts(%{assigns: %{admin?: false}} = socket), do: socket
+
+  defp assign_counts(socket) do
+    scope = socket.assigns.current_scope
+
+    socket
+    |> assign(:unassigned_count, DueItems.count_by_status(scope).unassigned)
+    |> assign(:awaiting_count, DueItems.count_awaiting(scope))
+    |> assign(:reviews_count, DueItems.count_renewal_reviews(scope))
+  end
+
+  defp load_tab(%{assigns: %{tab: :reviews}} = socket) do
+    socket
+    |> assign(:has_more?, false)
+    |> assign(:empty?, false)
+    |> stream(:due_items, [], reset: true)
+    |> stream(
+      :renewal_reviews,
+      DueItems.list_renewal_reviews(socket.assigns.current_scope),
+      reset: true
+    )
+  end
+
+  defp load_tab(socket), do: load_page(socket, reset: true)
 
   defp load_page(socket, reset: reset?) do
     %{current_scope: scope, params: params, offset: offset} = socket.assigns
@@ -375,9 +504,24 @@ defmodule DueDeskWeb.DueItemLive.Index do
         :active -> params
         :unassigned -> Map.put(params, "assignment", "unassigned")
         :archived -> params |> Map.delete("status") |> Map.put("view", "archived")
+        :awaiting -> params |> Map.delete("status") |> Map.put("view", "awaiting")
+        :reviews -> %{"view" => "reviews"}
       end
     end)
     |> list_path()
+  end
+
+  defp renewed_by(%{completed_by_user: %{name: name}}), do: name
+  defp renewed_by(_cycle), do: "a former member"
+
+  defp next_dates_label(%{disposition_state: "awaiting_new_dates"}), do: "Next dates pending"
+
+  defp next_dates_label(%{current_cycle: cycle}) do
+    cond do
+      cycle.due_date -> "Next due #{date(cycle.due_date)}"
+      cycle.expiry_date -> "Next expiry #{date(cycle.expiry_date)}"
+      true -> "—"
+    end
   end
 
   defp status_options do
@@ -405,6 +549,7 @@ defmodule DueDeskWeb.DueItemLive.Index do
 
   defp empty_title(_tab, true, _admin?), do: "No DueItems match these filters"
   defp empty_title(:archived, _, _), do: "No archived DueItems"
+  defp empty_title(:awaiting, _, _), do: "Nothing awaiting action"
   defp empty_title(:unassigned, _, _), do: "Everything has someone responsible"
   defp empty_title(:active, _, true), do: "No DueItems yet"
   defp empty_title(:active, _, false), do: "Nothing assigned to you yet"
@@ -413,6 +558,10 @@ defmodule DueDeskWeb.DueItemLive.Index do
 
   defp empty_text(:archived, _, _),
     do: "DueItems you archive appear here with their history, and can be restored."
+
+  defp empty_text(:awaiting, _, _),
+    do:
+      "Completed DueItems, and renewals still needing dates, wait here for you to decide what happens next."
 
   defp empty_text(:unassigned, _, _),
     do: "Every active DueItem has a Primary Responsible."

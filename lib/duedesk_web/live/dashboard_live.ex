@@ -168,6 +168,46 @@ defmodule DueDeskWeb.DashboardLive do
             </ul>
           </.card>
 
+          <.card :if={@completed != []} id="recently-completed" title="Recently completed">
+            <:subtitle>Renewed or completed in the last 30 days.</:subtitle>
+            <ul class="-my-1 divide-y divide-line">
+              <li :for={cycle <- @completed} id={"completed-#{cycle.id}"}>
+                <.link
+                  navigate={~p"/due-items/#{cycle.due_item}"}
+                  class="group flex items-center gap-3 py-2.5 text-sm"
+                >
+                  <span class={[
+                    "flex size-6 shrink-0 items-center justify-center rounded-full",
+                    if(cycle.completion_type == "renewed",
+                      do: "bg-emerald-50 text-emerald-600",
+                      else: "bg-violet-50 text-violet-600"
+                    )
+                  ]}>
+                    <.icon
+                      name={
+                        if cycle.completion_type == "renewed",
+                          do: "hero-arrow-path-mini",
+                          else: "hero-check-mini"
+                      }
+                      class="size-3.5"
+                    />
+                  </span>
+                  <span class="min-w-0 flex-1 truncate text-ink group-hover:underline group-hover:underline-offset-2">
+                    {cycle.due_item.title}
+                  </span>
+                  <span class="hidden shrink-0 truncate text-xs text-muted sm:block">
+                    {if cycle.completion_type == "renewed", do: "Renewed", else: "Completed"} by {closed_by(
+                      cycle
+                    )}
+                  </span>
+                  <span class="w-24 shrink-0 text-right text-xs tabular-nums text-zinc-500">
+                    {date(cycle.completed_on)}
+                  </span>
+                </.link>
+              </li>
+            </ul>
+          </.card>
+
           <.card
             :if={!@has_items?}
             id="welcome"
@@ -211,6 +251,52 @@ defmodule DueDeskWeb.DashboardLive do
         </div>
 
         <div class="space-y-4">
+          <.card :if={@admin?} id="admin-queues" title="Waiting for you">
+            <:subtitle>Decisions only an Administrator can make.</:subtitle>
+            <ul class="-my-1 divide-y divide-line">
+              <li id="card-awaiting">
+                <.link
+                  navigate={~p"/due-items?view=awaiting"}
+                  class="group flex items-center gap-3 py-2.5 text-sm"
+                >
+                  <.icon name="hero-inbox-arrow-down" class="size-4 shrink-0 text-violet-500" />
+                  <span class="min-w-0 flex-1 truncate text-ink group-hover:underline group-hover:underline-offset-2">
+                    Awaiting action
+                  </span>
+                  <span class={[
+                    "shrink-0 rounded-full px-2 py-px text-xs font-medium tabular-nums",
+                    if(@awaiting_count > 0,
+                      do: "bg-violet-50 text-violet-700",
+                      else: "bg-[#efefed] text-zinc-500"
+                    )
+                  ]}>
+                    {@awaiting_count}
+                  </span>
+                </.link>
+              </li>
+              <li id="card-reviews">
+                <.link
+                  navigate={~p"/due-items?view=reviews"}
+                  class="group flex items-center gap-3 py-2.5 text-sm"
+                >
+                  <.icon name="hero-eye" class="size-4 shrink-0 text-sky-600" />
+                  <span class="min-w-0 flex-1 truncate text-ink group-hover:underline group-hover:underline-offset-2">
+                    Renewal reviews
+                  </span>
+                  <span class={[
+                    "shrink-0 rounded-full px-2 py-px text-xs font-medium tabular-nums",
+                    if(@reviews_count > 0,
+                      do: "bg-sky-50 text-sky-700",
+                      else: "bg-[#efefed] text-zinc-500"
+                    )
+                  ]}>
+                    {@reviews_count}
+                  </span>
+                </.link>
+              </li>
+            </ul>
+          </.card>
+
           <.card :if={@admin? and @by_organisation != []} id="by-organisation" title="By Organisation">
             <:subtitle>Active DueItems, and how many need attention.</:subtitle>
             <ul class="-my-1 divide-y divide-line">
@@ -311,6 +397,9 @@ defmodule DueDeskWeb.DashboardLive do
     """
   end
 
+  defp closed_by(%{completed_by_user: %{name: name}}), do: name
+  defp closed_by(_cycle), do: "a former member"
+
   attr :number, :integer, required: true
   attr :title, :string, required: true
   attr :navigate, :string, required: true
@@ -378,6 +467,9 @@ defmodule DueDeskWeb.DashboardLive do
      |> assign(:has_items?, has_items?)
      |> assign(:lists, attention_lists(scope, counts, admin?))
      |> assign(:recent, if(admin?, do: [], else: DueItems.list_recently_updated(scope, 5)))
+     |> assign(:completed, DueItems.list_recently_completed(scope, 5))
+     |> assign(:awaiting_count, DueItems.count_awaiting(scope))
+     |> assign(:reviews_count, DueItems.count_renewal_reviews(scope))
      |> assign(:by_organisation, DueItems.counts_by_organisation(scope))
      |> assign(:by_user, DueItems.counts_by_user(scope))
      |> assign(:timeline, DueItems.due_timeline(scope, @timeline_days))

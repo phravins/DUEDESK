@@ -12,13 +12,27 @@ defmodule DueDesk.DueItems do
 
   import Ecto.Query, warn: false
 
+  import DueDesk.DueItems.Steps,
+    only: [
+      lock_account: 2,
+      check_limit: 1,
+      replace_reminders: 3,
+      reminder_rows: 2,
+      assignment_rows: 4,
+      assignment_plan: 3,
+      apply_assignment_plan: 4,
+      validate_assignees: 2,
+      authorize: 1,
+      same_account: 2,
+      iso: 1
+    ]
+
   alias Ecto.Multi
-  alias DueDesk.{Audit, Billing, Permissions, Repo, Tenancy}
+  alias DueDesk.{Audit, Permissions, Repo, Tenancy}
   alias DueDesk.Accounts.Scope
-  alias DueDesk.DueItems.{Assignment, Category, Cycle, DueItem, Note, Queries, ReminderRule}
-  alias DueDesk.DueItems.Status
+  alias DueDesk.DueItems.{Assignment, Category, Cycle, DueItem, Lifecycle, Note, Queries}
+  alias DueDesk.DueItems.{ReminderRule, Status}
   alias DueDesk.Organisations.Organisation
-  alias DueDesk.Tenancy.{CustomerAccount, Membership}
 
   require DueDesk.DueItems.Status
 
@@ -237,6 +251,102 @@ defmodule DueDesk.DueItems do
     |> select([item: i], {i.organisation_id, count(i.id)})
     |> Repo.all()
     |> Map.new()
+  end
+
+  @doc """
+  Counts active DueItems waiting for an Administrator: completed ones and
+  ones renewed without next dates. Administrators and Super Admins only;
+  others get 0.
+  """
+  def count_awaiting(%Scope{} = scope) do
+    if Permissions.can_view_all_due_items?(scope) do
+      scope
+      |> Queries.base()
+      |> Queries.awaiting()
+      |> select([item: i], count(i.id))
+      |> Repo.one()
+    else
+      0
+    end
+  end
+
+  @doc """
+  Renewals by Users that an Administrator has not reviewed yet, newest
+  first, as cycles with their DueItem (Organisation and current cycle
+  loaded) and who renewed. Administrators and Super Admins only; others
+  get `[]`.
+  """
+  def list_renewal_reviews(%Scope{} = scope) do
+    if Permissions.can_view_all_due_items?(scope) do
+      scope
+      |> renewal_reviews()
+      |> order_by([cycle: c], desc: c.completed_at, desc: c.id)
+      |> preload([item: i], [:completed_by_user, due_item: {i, [:organisation, :current_cycle]}])
+      |> Repo.all()
+    else
+      []
+    end
+  end
+
+  @doc "How many renewals wait for review; 0 for Users."
+  def count_renewal_reviews(%Scope{} = scope) do
+    if Permissions.can_view_all_due_items?(scope) do
+      scope |> renewal_reviews() |> select([cycle: c], count(c.id)) |> Repo.one()
+    else
+      0
+    end
+  end
+
+  defp renewal_reviews(scope) do
+    account_id = Scope.account_id!(scope)
+
+    from(c in Cycle,
+      as: :cycle,
+      join: i in assoc(c, :due_item),
+      as: :item,
+      where: c.customer_account_id == ^account_id and i.customer_account_id == ^account_id,
+      where: c.completion_type == "renewed" and is_nil(c.reviewed_at) and i.status == "active"
+    )
+  end
+
+  @doc """
+  Cycles renewed or completed in the last 30 days on DueItems the scope
+  may see, newest first, with their DueItem and who closed them.
+  """
+  def list_recently_completed(%Scope{} = scope, limit \\ 5) do
+    account_id = Scope.account_id!(scope)
+    since = DateTime.add(DateTime.utc_now(:second), -30, :day)
+    visible = scope |> Queries.base() |> Queries.visible(scope) |> select([item: i], i.id)
+
+    from(c in Cycle,
+      join: i in assoc(c, :due_item),
+      where: c.customer_account_id == ^account_id and c.due_item_id in subquery(visible),
+      where: not is_nil(c.completed_at) and c.completed_at >= ^since,
+      order_by: [desc: c.completed_at, desc: c.sequence],
+      limit: ^limit,
+      preload: [:completed_by_user, due_item: i]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
+  The closed (renewed or completed) cycles of a DueItem the scope may
+  see, newest first, with who closed and reviewed them.
+  """
+  def list_cycles(%Scope{} = scope, %DueItem{} = item) do
+    case visible_item(scope, item) do
+      {:ok, item} ->
+        from(c in Cycle,
+          where: c.due_item_id == ^item.id and c.customer_account_id == ^item.customer_account_id,
+          where: not is_nil(c.completed_at),
+          order_by: [desc: c.sequence],
+          preload: [:completed_by_user, :reviewed_by_user]
+        )
+        |> Repo.all()
+
+      _ ->
+        []
+    end
   end
 
   # Today and the last day that counts as due soon, in the account timezone.
@@ -477,25 +587,6 @@ defmodule DueDesk.DueItems do
     if old == new, do: changes, else: Map.put(changes, key, [iso(old), iso(new)])
   end
 
-  # Turns reminders off rather than deleting them, so a rule keeps its id.
-  defp replace_reminders(repo, item, offsets) do
-    now = DateTime.utc_now(:second)
-
-    {_, _} =
-      repo.update_all(
-        from(r in ReminderRule,
-          where: r.due_item_id == ^item.id and r.offset_days not in ^offsets and r.active
-        ),
-        set: [active: false, updated_at: now]
-      )
-
-    repo.insert_all(ReminderRule, reminder_rows(item, offsets),
-      on_conflict: [set: [active: true, updated_at: now]],
-      conflict_target: [:due_item_id, :offset_days]
-    )
-    |> then(&{:ok, &1})
-  end
-
   @doc """
   Sets who is responsible for a DueItem: one Primary Responsible (or
   nobody) and any Additional Assignees. Assignments that are removed are
@@ -563,53 +654,15 @@ defmodule DueDesk.DueItems do
   end
 
   defp apply_assignment(scope, item, %{} = wanted) do
-    primary = wanted[:primary_user_id]
-    additional = wanted.additional_user_ids
-
-    current_primary =
-      Enum.find_value(item.active_assignments, &(&1.role == "primary" && &1.user_id))
-
-    current_additional =
-      for %Assignment{role: "additional", user_id: id} <- item.active_assignments, do: id
-
-    to_end =
-      for a <- item.active_assignments,
-          (a.role == "primary" and a.user_id != primary) or
-            (a.role == "additional" and a.user_id not in additional),
-          do: a.id
-
-    kept_additional = current_additional -- (current_additional -- additional)
-
-    new_rows =
-      if(primary && primary != current_primary, do: [{primary, "primary"}], else: []) ++
-        for(id <- additional -- kept_additional, do: {id, "additional"})
-
-    changes =
-      %{}
-      |> then(fn c ->
-        if primary != current_primary,
-          do: Map.put(c, "primary", [current_primary, primary]),
-          else: c
-      end)
-      |> then(fn c ->
-        if Enum.sort(additional) != Enum.sort(current_additional),
-          do: Map.put(c, "additional", [Enum.sort(current_additional), Enum.sort(additional)]),
-          else: c
-      end)
+    {_to_end, _new_rows, changes} =
+      plan = assignment_plan(item, wanted[:primary_user_id], wanted.additional_user_ids)
 
     if changes == %{} do
       {:ok, item}
     else
-      now = DateTime.utc_now(:second)
-
       Multi.new()
-      |> Multi.update_all(:ended, from(a in Assignment, where: a.id in ^to_end),
-        set: [ended_at: now, updated_at: now]
-      )
-      |> Multi.insert_all(:assigned, Assignment, fn _ ->
-        for {user_id, role} <- new_rows, do: assignment_row(scope, item, user_id, role, now)
-      end)
-      |> Multi.update(:item, Ecto.Changeset.change(item, updated_at: now))
+      |> apply_assignment_plan(scope, item, plan)
+      |> Multi.update(:item, Ecto.Changeset.change(item, updated_at: DateTime.utc_now(:second)))
       |> Audit.multi_log(:audit, scope, "due_item.assigned", item, changes: changes)
       |> Repo.transaction()
       |> case do
@@ -668,8 +721,9 @@ defmodule DueDesk.DueItems do
 
   @doc """
   Archives a DueItem. It is hidden from Users, no longer counts toward
-  the plan limit and keeps its history. Administrators and Super Admins
-  only.
+  the plan limit and keeps its history. An item awaiting an
+  Administrator's decision leaves that queue. Administrators and Super
+  Admins only.
   """
   def archive_due_item(%Scope{} = scope, %DueItem{status: "active"} = item) do
     with :ok <- authorize(Permissions.can_manage_due_items?(scope)),
@@ -677,13 +731,16 @@ defmodule DueDesk.DueItems do
       changeset =
         Ecto.Changeset.change(item,
           status: "archived",
+          disposition_state: nil,
           archived_at: DateTime.utc_now(:second),
           archived_by_user_id: scope.user.id
         )
 
+      metadata = if item.disposition_state, do: %{"from" => item.disposition_state}, else: %{}
+
       Multi.new()
       |> Multi.update(:item, changeset)
-      |> Audit.multi_log(:audit, scope, "due_item.archived", item)
+      |> Audit.multi_log(:audit, scope, "due_item.archived", item, metadata: metadata)
       |> Repo.transaction()
       |> case do
         {:ok, %{item: item}} -> {:ok, item}
@@ -693,30 +750,17 @@ defmodule DueDesk.DueItems do
 
   def archive_due_item(%Scope{}, %DueItem{}), do: {:error, :not_active}
 
-  @doc """
-  Restores an archived DueItem, if the plan has room for it.
-  Administrators and Super Admins only.
-  """
-  def restore_due_item(%Scope{} = scope, %DueItem{status: "archived"} = item) do
-    with :ok <- authorize(Permissions.can_manage_due_items?(scope)),
-         :ok <- same_account(scope, item) do
-      changeset =
-        Ecto.Changeset.change(item, status: "active", archived_at: nil, archived_by_user_id: nil)
+  ## Lifecycle
 
-      Multi.new()
-      |> lock_account(scope)
-      |> Multi.run(:limit, fn _repo, _ -> check_limit(scope) end)
-      |> Multi.update(:item, changeset)
-      |> Audit.multi_log(:audit, scope, "due_item.restored", item)
-      |> Repo.transaction()
-      |> case do
-        {:ok, %{item: item}} -> {:ok, item}
-        {:error, :limit, reason, _} -> {:error, reason}
-      end
-    end
-  end
-
-  def restore_due_item(%Scope{}, %DueItem{}), do: {:error, :not_archived}
+  defdelegate change_completion(scope, item, attrs \\ %{}), to: Lifecycle
+  defdelegate renew_due_item(scope, item, attrs), to: Lifecycle
+  defdelegate complete_due_item(scope, item, attrs), to: Lifecycle
+  defdelegate prepare_reactivate(item), to: Lifecycle
+  defdelegate change_reactivation(scope, item, attrs \\ %{}), to: Lifecycle
+  defdelegate reactivate_due_item(scope, item, attrs), to: Lifecycle
+  defdelegate dismiss_renewal_review(scope, cycle_id), to: Lifecycle
+  defdelegate delete_due_item(scope, item, confirmation), to: Lifecycle
+  defdelegate next_dates(scope, item), to: Lifecycle
 
   ## Notes
 
@@ -791,43 +835,6 @@ defmodule DueDesk.DueItems do
 
   ## Helpers
 
-  defp reminder_rows(item, offsets) do
-    now = DateTime.utc_now(:second)
-
-    for offset <- offsets do
-      %{
-        id: Ecto.UUID.generate(),
-        customer_account_id: item.customer_account_id,
-        due_item_id: item.id,
-        offset_days: offset,
-        active: true,
-        inserted_at: now,
-        updated_at: now
-      }
-    end
-  end
-
-  defp assignment_rows(scope, item, primary, additional) do
-    now = DateTime.utc_now(:second)
-    rows = if primary, do: [assignment_row(scope, item, primary, "primary", now)], else: []
-    rows ++ for(id <- additional || [], do: assignment_row(scope, item, id, "additional", now))
-  end
-
-  defp assignment_row(scope, item, user_id, role, now) do
-    %{
-      id: Ecto.UUID.generate(),
-      customer_account_id: item.customer_account_id,
-      due_item_id: item.id,
-      user_id: user_id,
-      role: role,
-      assigned_by_user_id: scope.user.id,
-      assigned_at: now,
-      ended_at: nil,
-      inserted_at: now,
-      updated_at: now
-    }
-  end
-
   # Organisations and categories must belong to the account and be active.
   # An unchanged reference to one archived later is kept.
   defp validate_references(changeset, scope) do
@@ -860,67 +867,6 @@ defmodule DueDesk.DueItems do
     end
   end
 
-  # Assignees must be active members of the account.
-  defp validate_assignees(changeset, scope) do
-    primary = Ecto.Changeset.get_field(changeset, :primary_user_id)
-    additional = Ecto.Changeset.get_field(changeset, :additional_user_ids) || []
-    ids = Enum.reject([primary | additional], &is_nil/1)
-
-    if ids == [] do
-      changeset
-    else
-      account_id = Scope.account_id!(scope)
-
-      active =
-        from(m in Membership,
-          where:
-            m.customer_account_id == ^account_id and m.status == "active" and m.user_id in ^ids,
-          select: m.user_id
-        )
-        |> Repo.all()
-
-      cond do
-        primary && primary not in active ->
-          Ecto.Changeset.add_error(changeset, :primary_user_id, "choose an active member")
-
-        Enum.any?(additional, &(&1 not in active)) ->
-          Ecto.Changeset.add_error(changeset, :additional_user_ids, "choose active members")
-
-        true ->
-          changeset
-      end
-    end
-  end
-
   defp maybe_audit(multi, true = _no_changes, _fun), do: multi
   defp maybe_audit(multi, false, fun), do: fun.(multi)
-
-  # Serialises limit checks for one account, so two requests cannot both
-  # add the last allowed DueItem.
-  defp lock_account(multi, scope) do
-    account_id = Scope.account_id!(scope)
-
-    Multi.run(multi, :lock, fn repo, _ ->
-      from(a in CustomerAccount, where: a.id == ^account_id, lock: "FOR UPDATE", select: a.id)
-      |> repo.one()
-      |> case do
-        nil -> {:error, :not_found}
-        id -> {:ok, id}
-      end
-    end)
-  end
-
-  defp check_limit(scope) do
-    with :ok <- Billing.check(scope, :due_item), do: {:ok, :within_limit}
-  end
-
-  defp authorize(true), do: :ok
-  defp authorize(false), do: {:error, :unauthorized}
-
-  defp same_account(scope, %DueItem{customer_account_id: account_id}) do
-    if account_id == Scope.account_id!(scope), do: :ok, else: {:error, :unauthorized}
-  end
-
-  defp iso(nil), do: nil
-  defp iso(%Date{} = date), do: Date.to_iso8601(date)
 end

@@ -113,6 +113,23 @@ defmodule DueDesk.DueItems.DueItem do
     |> validate_reminders()
   end
 
+  @doc """
+  Changeset for re-dating and reactivating a DueItem, or restoring an
+  archived one (Administrators and Super Admins): dates of the cycle
+  that starts, responsibility and reminders. The item should have these
+  virtual fields loaded.
+  """
+  def reactivate_changeset(item, attrs) do
+    item
+    |> cast(
+      clean_lists(attrs),
+      [:start_date, :due_date, :expiry_date] ++ @assignment_fields ++ [:reminder_offsets]
+    )
+    |> Cycle.validate_dates()
+    |> validate_assignment()
+    |> validate_reminders()
+  end
+
   defp validate_item(changeset) do
     changeset
     |> update_change(:title, &squish/1)

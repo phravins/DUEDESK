@@ -18,30 +18,49 @@ defmodule DueDeskWeb.DueItemComponents do
 
   @doc """
   The status badge, followed by an Unassigned badge when nobody is
-  responsible for an active DueItem.
+  responsible for an active DueItem. A DueItem waiting for an
+  Administrator shows that instead of its date status.
   """
   attr :item, DueItem, required: true
   attr :status, :atom, required: true
   attr :overridden, :boolean, default: false
 
   def due_item_status(assigns) do
+    assigns = assign(assigns, :shown, disposition_status(assigns.item) || assigns.status)
+
     ~H"""
     <span class="inline-flex flex-wrap items-center gap-1.5">
-      <.status_badge status={@status} />
+      <.status_badge status={@shown} />
       <span
-        :if={@overridden && @item.current_cycle.status_override}
+        :if={@overridden && @shown == @status && @item.current_cycle.status_override}
         class="text-[11px] font-medium text-zinc-400"
         title="Status set by an Administrator"
       >
         Set manually
       </span>
       <.status_badge
-        :if={@item.status == "active" and DueItem.unassigned?(@item)}
+        :if={
+          @item.status == "active" and is_nil(@item.disposition_state) and DueItem.unassigned?(@item)
+        }
         status={:unassigned}
       />
     </span>
     """
   end
+
+  @doc """
+  `:awaiting` or `:needs_dates` for a DueItem waiting for an
+  Administrator, else nil.
+  """
+  def disposition_status(%DueItem{status: "active", disposition_state: state}) do
+    case state do
+      "awaiting_admin_disposition" -> :awaiting
+      "awaiting_new_dates" -> :needs_dates
+      _ -> nil
+    end
+  end
+
+  def disposition_status(%DueItem{}), do: nil
 
   @doc "An avatar with initials, coloured by name."
   attr :name, :string, required: true

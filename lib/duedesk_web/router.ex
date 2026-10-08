@@ -55,6 +55,9 @@ defmodule DueDeskWeb.Router do
       live "/due-items/new", DueItemLive.Form, :new
       live "/due-items/:id", DueItemLive.Show, :show
       live "/due-items/:id/edit", DueItemLive.Form, :edit
+      live "/due-items/:id/renew", DueItemLive.Renew, :renew
+      live "/due-items/:id/complete", DueItemLive.Complete, :complete
+      live "/due-items/:id/reactivate", DueItemLive.Reactivate, :reactivate
       live "/organisations", OrganisationLive.Index, :index
       live "/organisations/new", OrganisationLive.Form, :new
       live "/organisations/:id", OrganisationLive.Show, :show

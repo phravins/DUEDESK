@@ -50,7 +50,8 @@ defmodule DueDesk.Permissions do
   @doc """
   Control of DueItems: Organisation, category, related party, dates after
   creation, recurrence, reminders, responsibility, status overrides,
-  archive and restore. Administrators and Super Admins only.
+  archive, restore, decisions on completed DueItems and renewal reviews.
+  Administrators and Super Admins only.
   """
   def can_manage_due_items?(scope), do: admin?(scope)
 
@@ -68,6 +69,19 @@ defmodule DueDesk.Permissions do
   end
 
   def can_view_due_item?(_scope, _item), do: false
+
+  @doc """
+  Whether the scope may renew or complete `item`: anyone who can see it,
+  while it is active and not waiting for an Administrator. Needs the
+  item's active assignments preloaded.
+  """
+  def can_act_on_due_item?(scope, %{status: "active", disposition_state: nil} = item),
+    do: can_view_due_item?(scope, item)
+
+  def can_act_on_due_item?(_scope, _item), do: false
+
+  @doc "Permanently deleting an archived DueItem. Super Admin only."
+  def can_delete_due_item?(scope), do: super_admin?(scope)
 
   @doc "Anyone who can see a DueItem may add a note to it."
   def can_add_note?(scope, item), do: can_view_due_item?(scope, item)

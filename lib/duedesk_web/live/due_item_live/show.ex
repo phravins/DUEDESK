@@ -3,8 +3,11 @@ defmodule DueDeskWeb.DueItemLive.Show do
   A DueItem's detail page (UX spec §35): dates, status, who is
   responsible, recurrence and reminders, notes and readable history.
 
-  Administrators and Super Admins edit, assign, override the status and
-  archive or restore here. Anyone who can see the DueItem can add notes.
+  Anyone who can see an active DueItem can renew or complete it and add
+  notes. Administrators and Super Admins edit, assign, override the
+  status, archive, decide what happens to completed DueItems, restore
+  archived ones and review Users' renewals here; a Super Admin can
+  permanently delete an archived DueItem.
   A DueItem the viewer may not see gets the same message whether it
   exists or not.
   """
@@ -12,7 +15,7 @@ defmodule DueDeskWeb.DueItemLive.Show do
 
   import DueDeskWeb.DueItemComponents
 
-  alias DueDesk.{Billing, DueItems, Permissions, Tenancy}
+  alias DueDesk.{DueItems, Permissions, Tenancy}
   alias DueDesk.DueItems.{Cycle, DueItem, Recurrence, ReminderRule, Status}
 
   @not_available "This DueItem is not available to your account access."
@@ -33,32 +36,105 @@ defmodule DueDeskWeb.DueItemLive.Show do
             <span>{@item.category.name}</span>
           </span>
         </:subtitle>
-        <:actions :if={@control?}>
-          <%= if @item.status == "active" do %>
-            <.button
-              id="archive-due-item"
-              variant="outline"
-              phx-click="archive"
-              data-confirm="Archive this DueItem? It is hidden from Users, stops sending reminders and no longer counts toward your plan. Its history is kept."
-            >
-              <.icon name="hero-archive-box" class="size-4" /> Archive
-            </.button>
-            <.button id="edit-due-item" navigate={~p"/due-items/#{@item}/edit"}>
-              <.icon name="hero-pencil-square" class="size-4" /> Edit
-            </.button>
-          <% else %>
-            <.button
-              id="restore-due-item"
-              phx-click="restore"
-              data-confirm="Restore this DueItem? Check its dates and who is responsible afterwards. It will count toward your plan again."
-            >
-              <.icon name="hero-arrow-uturn-left" class="size-4" /> Restore
-            </.button>
+        <:actions :if={@can_act? or @control?}>
+          <.button
+            :if={@can_act? and @recurring?}
+            id="renew-due-item"
+            navigate={~p"/due-items/#{@item}/renew"}
+          >
+            <.icon name="hero-arrow-path" class="size-4" /> Renew
+          </.button>
+          <.button
+            :if={@can_act? and not @recurring?}
+            id="complete-due-item"
+            navigate={~p"/due-items/#{@item}/complete"}
+          >
+            <.icon name="hero-check" class="size-4" /> Mark as completed
+          </.button>
+          <%= cond do %>
+            <% not @control? or @awaiting -> %>
+            <% @item.status == "active" -> %>
+              <.button
+                id="archive-due-item"
+                variant="outline"
+                phx-click="archive"
+                data-confirm="Archive this DueItem? It is hidden from Users, stops sending reminders and no longer counts toward your plan. Its history is kept."
+              >
+                <.icon name="hero-archive-box" class="size-4" /> Archive
+              </.button>
+              <.button
+                id="edit-due-item"
+                variant={if(@can_act?, do: "outline", else: "primary")}
+                navigate={~p"/due-items/#{@item}/edit"}
+              >
+                <.icon name="hero-pencil-square" class="size-4" /> Edit
+              </.button>
+            <% true -> %>
+              <.button
+                :if={@delete? and @panel != :delete}
+                id="delete-due-item"
+                variant="outline"
+                phx-click="open_panel"
+                phx-value-panel="delete"
+              >
+                <.icon name="hero-trash" class="size-4" /> Delete permanently
+              </.button>
+              <.button id="restore-due-item" navigate={~p"/due-items/#{@item}/reactivate"}>
+                <.icon name="hero-arrow-uturn-left" class="size-4" /> Restore
+              </.button>
           <% end %>
         </:actions>
       </.page_header>
 
-      <.limit_notice :if={@limit_message} message={@limit_message} plans_link={@plans_link?} />
+      <div
+        :if={@control? and @awaiting}
+        id="awaiting-banner"
+        class="mb-4 flex flex-col gap-3 rounded-lg border border-violet-200/70 bg-violet-50/60 px-4 py-3 text-sm sm:flex-row sm:items-center"
+      >
+        <.icon name="hero-inbox-arrow-down" class="hidden size-5 shrink-0 text-violet-500 sm:block" />
+        <p class="min-w-0 flex-1 text-violet-900">
+          {awaiting_message(@awaiting, List.first(@cycles))}
+        </p>
+        <div class="flex shrink-0 flex-wrap gap-2">
+          <.button
+            id="archive-awaiting"
+            size="sm"
+            variant="outline"
+            phx-click="archive"
+            data-confirm="Archive this DueItem? It no longer counts toward your plan. Its history is kept."
+          >
+            <.icon name="hero-archive-box" class="size-4" /> Archive
+          </.button>
+          <.button
+            id="reactivate-due-item"
+            size="sm"
+            navigate={~p"/due-items/#{@item}/reactivate"}
+          >
+            {if @awaiting == :needs_dates, do: "Set new dates", else: "Re-date and reactivate"}
+          </.button>
+        </div>
+      </div>
+
+      <div
+        :if={@control? and @pending_review}
+        id="renewal-review"
+        class="mb-4 flex flex-col gap-3 rounded-lg border border-sky-200/70 bg-sky-50/60 px-4 py-3 text-sm sm:flex-row sm:items-center"
+      >
+        <.icon name="hero-eye" class="hidden size-5 shrink-0 text-sky-600 sm:block" />
+        <p class="min-w-0 flex-1 text-sky-900">
+          Renewed by {completed_by(@pending_review)} on {date(@pending_review.completed_on)}.
+          Check the new dates, then mark the renewal as reviewed.
+        </p>
+        <.button
+          id="dismiss-review"
+          size="sm"
+          variant="outline"
+          phx-click="dismiss_review"
+          phx-value-id={@pending_review.id}
+        >
+          <.icon name="hero-check" class="size-4" /> Mark as reviewed
+        </.button>
+      </div>
 
       <div
         :if={@item.status == "archived"}
@@ -72,10 +148,35 @@ defmodule DueDeskWeb.DueItemLive.Show do
         </span>
       </div>
 
+      <.form
+        :if={@panel == :delete}
+        for={@delete_form}
+        id="delete-form"
+        phx-submit="delete"
+        class="mb-4 rounded-lg border border-rose-200 bg-rose-50/40 p-4 pb-1"
+      >
+        <p class="text-sm font-medium text-rose-900">Permanently delete this DueItem?</p>
+        <p class="mt-1 mb-3 text-sm text-rose-800">
+          Its cycles, notes, responsibility and reminders are deleted and cannot be recovered.
+          Type <span class="font-semibold">{@item.title}</span> to confirm.
+        </p>
+        <div class="max-w-md">
+          <.input field={@delete_form[:title]} aria-label="DueItem title" autocomplete="off" />
+        </div>
+        <div class="mb-3 flex gap-2">
+          <.button id="confirm-delete" size="sm" variant="danger" phx-disable-with="Deleting…">
+            Delete permanently
+          </.button>
+          <.button type="button" size="sm" variant="ghost" phx-click="close_panel">
+            Cancel
+          </.button>
+        </div>
+      </.form>
+
       <div class="grid gap-4 lg:grid-cols-3">
         <div class="space-y-4 lg:col-span-2">
           <.card id="due-item-dates" title="Dates">
-            <:action :if={@control? and @item.status == "active" and @panel != :override}>
+            <:action :if={@control? and @live? and @panel != :override}>
               <button
                 type="button"
                 id="open-override"
@@ -217,6 +318,49 @@ defmodule DueDeskWeb.DueItemLive.Show do
             </.form>
           </.card>
 
+          <.card :if={@cycles != []} id="due-item-cycles" title="Previous cycles">
+            <div id="cycles" class="-my-1 divide-y divide-line">
+              <details :for={cycle <- @cycles} id={"cycle-#{cycle.id}"} class="group py-2.5">
+                <summary class="flex cursor-pointer list-none items-center gap-3 text-sm">
+                  <.icon
+                    name="hero-chevron-right-mini"
+                    class="size-4 shrink-0 text-zinc-400 transition group-open:rotate-90"
+                  />
+                  <span class="min-w-0 flex-1 truncate text-ink">
+                    {cycle_label(cycle)}
+                  </span>
+                  <span class="shrink-0 text-xs text-muted">
+                    {completion_verb(cycle)} {date(cycle.completed_on)}
+                  </span>
+                </summary>
+                <dl class="mt-2 ml-7 grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
+                  <div>
+                    <dt class="inline text-muted">Start:</dt>
+                    <dd class="inline text-zinc-700">{date(cycle.start_date)}</dd>
+                  </div>
+                  <div>
+                    <dt class="inline text-muted">Expiry:</dt>
+                    <dd class="inline text-zinc-700">{date(cycle.expiry_date)}</dd>
+                  </div>
+                  <div>
+                    <dt class="inline text-muted">{completion_verb(cycle)} by:</dt>
+                    <dd class="inline text-zinc-700">{completed_by(cycle)}</dd>
+                  </div>
+                  <div :if={cycle.completion_type == "renewed"}>
+                    <dt class="inline text-muted">Review:</dt>
+                    <dd class="inline text-zinc-700">
+                      {if cycle.reviewed_at, do: "Reviewed", else: "Not reviewed yet"}
+                    </dd>
+                  </div>
+                  <div :if={cycle.completion_note} class="sm:col-span-2">
+                    <dt class="text-muted">Note</dt>
+                    <dd class="mt-0.5 whitespace-pre-line text-zinc-700">{cycle.completion_note}</dd>
+                  </div>
+                </dl>
+              </details>
+            </div>
+          </.card>
+
           <.card id="due-item-history" title="History">
             <ol id="history" phx-update="stream" class="relative space-y-4">
               <li id="history-empty" class="hidden text-sm text-muted only:block">
@@ -238,7 +382,7 @@ defmodule DueDeskWeb.DueItemLive.Show do
 
         <div class="space-y-4">
           <.card id="due-item-responsibility" title="Responsibility">
-            <:action :if={@control? and @item.status == "active" and @panel != :assign}>
+            <:action :if={@control? and @live? and @panel != :assign}>
               <button
                 type="button"
                 id="open-assign"
@@ -328,7 +472,7 @@ defmodule DueDeskWeb.DueItemLive.Show do
                     Administrators once it is overdue.
                   </p>
                   <.button
-                    :if={@control? and @item.status == "active"}
+                    :if={@control? and @live?}
                     id="assign-responsibility"
                     size="sm"
                     class="mt-3"
@@ -391,9 +535,8 @@ defmodule DueDeskWeb.DueItemLive.Show do
          |> assign(:control?, Permissions.can_manage_due_items?(scope))
          |> assign(:tz, scope.customer_account.timezone)
          |> assign(:today, Tenancy.today(scope))
+         |> assign(:delete?, Permissions.can_delete_due_item?(scope))
          |> assign(:panel, nil)
-         |> assign(:limit_message, nil)
-         |> assign(:plans_link?, false)
          |> assign(:note_form, to_form(DueItems.change_note()))
          |> assign_item(item)
          |> stream(:notes, DueItems.list_notes(scope, item))}
@@ -427,6 +570,17 @@ defmodule DueDeskWeb.DueItemLive.Show do
          :override_form,
          to_form(%{"status" => "up_to_date", "reason" => ""}, as: :override)
        )}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("open_panel", %{"panel" => "delete"}, socket) do
+    if socket.assigns.delete? and socket.assigns.item.status == "archived" do
+      {:noreply,
+       socket
+       |> assign(:panel, :delete)
+       |> assign(:delete_form, to_form(%{"title" => ""}, as: :delete))}
     else
       {:noreply, socket}
     end
@@ -520,25 +674,40 @@ defmodule DueDeskWeb.DueItemLive.Show do
     end
   end
 
-  def handle_event("restore", _params, socket) do
+  def handle_event("delete", %{"delete" => %{"title" => title}}, socket) do
     %{current_scope: scope, item: item} = socket.assigns
 
-    case DueItems.restore_due_item(scope, item) do
+    case DueItems.delete_due_item(scope, item, title) do
       {:ok, _} ->
         {:noreply,
          socket
-         |> assign(:limit_message, nil)
-         |> put_flash(:info, "DueItem restored. Check its dates and who is responsible.")
-         |> reload()}
+         |> put_flash(:info, "DueItem permanently deleted.")
+         |> push_navigate(to: ~p"/due-items?view=archived")}
 
-      {:error, {:limit_reached, info}} ->
+      {:error, :confirmation_mismatch} ->
         {:noreply,
-         socket
-         |> assign(:limit_message, Billing.limit_message(scope, info))
-         |> assign(:plans_link?, Permissions.can_manage_billing?(scope))}
+         assign(
+           socket,
+           :delete_form,
+           to_form(%{"title" => title},
+             as: :delete,
+             errors: [title: {"type the title exactly as shown", []}],
+             action: :validate
+           )
+         )}
 
       {:error, :not_archived} ->
-        {:noreply, reload(socket)}
+        {:noreply, socket |> assign(:panel, nil) |> reload()}
+
+      {:error, _} ->
+        {:noreply, not_available(socket)}
+    end
+  end
+
+  def handle_event("dismiss_review", %{"id" => cycle_id}, socket) do
+    case DueItems.dismiss_renewal_review(socket.assigns.current_scope, cycle_id) do
+      {:ok, _} ->
+        {:noreply, socket |> put_flash(:info, "Renewal marked as reviewed.") |> reload()}
 
       {:error, _} ->
         {:noreply, not_available(socket)}
@@ -585,10 +754,21 @@ defmodule DueDeskWeb.DueItemLive.Show do
     cycle = item.current_cycle
     status = Status.effective(item, cycle, today, days)
 
+    cycles = DueItems.list_cycles(scope, item)
+
     socket
     |> assign(:page_title, item.title)
     |> assign(:item, item)
     |> assign(:cycle, cycle)
+    |> assign(:can_act?, Permissions.can_act_on_due_item?(scope, item))
+    |> assign(:recurring?, Recurrence.recurring?(item))
+    |> assign(:awaiting, disposition_status(item))
+    |> assign(:live?, item.status == "active" and is_nil(item.disposition_state))
+    |> assign(:cycles, cycles)
+    |> assign(
+      :pending_review,
+      Enum.find(cycles, &(&1.completion_type == "renewed" and is_nil(&1.reviewed_at)))
+    )
     |> assign(:status, status)
     |> assign(
       :computed_status,
@@ -633,13 +813,38 @@ defmodule DueDeskWeb.DueItemLive.Show do
   defp override_field(:status_override_reason), do: :reason
   defp override_field(_), do: nil
 
+  defp awaiting_message(:needs_dates, cycle) do
+    "Renewed by #{completed_by(cycle)} on #{date(cycle.completed_on)}. Set the next dates to make it active again."
+  end
+
+  defp awaiting_message(:awaiting, cycle) do
+    "Completed on #{date(cycle.completed_on)} by #{completed_by(cycle)}. Decide what happens next: archive it, or re-date it and make it active again."
+  end
+
+  defp completed_by(%Cycle{completed_by_user: %{name: name}}), do: name
+  defp completed_by(_cycle), do: "a former member"
+
+  defp completion_verb(%Cycle{completion_type: "renewed"}), do: "Renewed"
+  defp completion_verb(%Cycle{}), do: "Completed"
+
+  defp cycle_label(%Cycle{} = cycle) do
+    dates =
+      cond do
+        cycle.due_date -> "Due #{date(cycle.due_date)}"
+        cycle.expiry_date -> "Expired #{date(cycle.expiry_date)}"
+        true -> "No dates"
+      end
+
+    "Cycle #{cycle.sequence} · #{dates}"
+  end
+
   defp has_details?(item),
     do: Enum.any?([item.reference_number, item.related_party, item.description])
 
   defp author_name(%{author_user: %{name: name}}), do: name
   defp author_name(_), do: "A former member"
 
-  defp days_note(%DueItem{status: "active"}, %Cycle{} = cycle, today) do
+  defp days_note(%DueItem{status: "active", disposition_state: nil}, %Cycle{} = cycle, today) do
     case cycle.due_date do
       nil ->
         nil

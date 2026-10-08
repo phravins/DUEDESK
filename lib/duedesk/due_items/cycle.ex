@@ -24,8 +24,11 @@ defmodule DueDesk.DueItems.Cycle do
     field :status_override_at, :utc_datetime
 
     field :completed_at, :utc_datetime
+    field :completed_on, :date
+    field :completion_type, :string
     field :completion_note, :string
     field :reviewed_at, :utc_datetime
+    field :dates_source, :string, default: "entered"
 
     belongs_to :customer_account, DueDesk.Tenancy.CustomerAccount
     belongs_to :due_item, DueDesk.DueItems.DueItem
@@ -46,7 +49,18 @@ defmodule DueDesk.DueItems.Cycle do
     cycle
     |> cast(attrs, [:start_date, :due_date, :expiry_date])
     |> validate_dates()
+    |> mark_entered()
   end
+
+  # Dates a person changed become the anchor for later renewals.
+  defp mark_entered(changeset) do
+    if Enum.any?([:start_date, :due_date, :expiry_date], &Map.has_key?(changeset.changes, &1)),
+      do: put_change(changeset, :dates_source, "entered"),
+      else: changeset
+  end
+
+  @doc "True once the cycle has been renewed or completed."
+  def closed?(%__MODULE__{completed_at: completed_at}), do: not is_nil(completed_at)
 
   @doc false
   def validate_dates(changeset) do

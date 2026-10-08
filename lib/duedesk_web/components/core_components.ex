@@ -60,7 +60,8 @@ defmodule DueDeskWeb.CoreComponents do
     "navy" => "bg-navy text-white shadow-xs hover:bg-navy-hover",
     "secondary" => "bg-[#efefed] text-ink hover:bg-[#e6e6e3]",
     "outline" => "border border-line bg-white text-ink shadow-xs hover:bg-zinc-50",
-    "ghost" => "text-zinc-600 hover:bg-zinc-100 hover:text-ink"
+    "ghost" => "text-zinc-600 hover:bg-zinc-100 hover:text-ink",
+    "danger" => "bg-rose-600 text-white shadow-xs hover:bg-rose-700"
   }
 
   @button_sizes %{
