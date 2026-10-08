@@ -91,6 +91,7 @@ defmodule DueDeskWeb.DueItemLive.Index do
               placeholder="Search title, reference, Organisation…"
               phx-debounce="300"
               aria-label="Search DueItems"
+              messages={false}
               class={filter_class("pl-9")}
             />
           </div>
@@ -101,6 +102,7 @@ defmodule DueDeskWeb.DueItemLive.Index do
               prompt="Any status"
               options={status_options()}
               aria-label="Status"
+              messages={false}
               class={filter_class("appearance-none pr-10")}
             />
           </div>
@@ -112,6 +114,7 @@ defmodule DueDeskWeb.DueItemLive.Index do
                 prompt="All Organisations"
                 options={@organisation_options}
                 aria-label="Organisation"
+                messages={false}
                 class={filter_class("appearance-none pr-10")}
               />
             </div>
@@ -122,6 +125,7 @@ defmodule DueDeskWeb.DueItemLive.Index do
                 prompt="All categories"
                 options={@category_options}
                 aria-label="Category"
+                messages={false}
                 class={filter_class("appearance-none pr-10")}
               />
             </div>

@@ -36,7 +36,7 @@ defmodule DueDeskAdmin.AccountsLive do
               id="account-search"
               phx-change="search"
               phx-submit="search"
-              class="w-full *:mb-0 sm:w-80"
+              class="w-full sm:w-80"
             >
               <.input
                 type="search"
@@ -45,6 +45,7 @@ defmodule DueDeskAdmin.AccountsLive do
                 icon="hero-magnifying-glass"
                 placeholder="Search by account name"
                 phx-debounce="300"
+                messages={false}
               />
             </form>
           </:actions>
@@ -52,16 +53,16 @@ defmodule DueDeskAdmin.AccountsLive do
 
         <div class="overflow-hidden rounded-lg border border-line bg-white">
           <div class="overflow-x-auto">
-            <table id="accounts" class="w-full text-left text-sm">
+            <table id="accounts" class="w-full text-left text-[13px]">
               <thead>
-                <tr class="border-b border-line bg-[#fafaf9] text-xs text-muted">
-                  <th class="px-5 py-3 font-medium">Account</th>
-                  <th class="px-5 py-3 font-medium">Plan</th>
-                  <th class="px-5 py-3 font-medium">Status</th>
-                  <th class="px-5 py-3 font-medium">Members</th>
-                  <th class="px-5 py-3 font-medium">Organisations</th>
-                  <th class="px-5 py-3 font-medium">Storage</th>
-                  <th class="px-5 py-3 font-medium">Created</th>
+                <tr class="border-b border-line bg-[#fafaf9] text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
+                  <th class="px-5 py-2.5 font-semibold">Account</th>
+                  <th class="px-5 py-2.5 font-semibold">Plan</th>
+                  <th class="px-5 py-2.5 font-semibold">Status</th>
+                  <th class="px-5 py-2.5 font-semibold">Members</th>
+                  <th class="px-5 py-2.5 font-semibold">Organisations</th>
+                  <th class="px-5 py-2.5 font-semibold">Storage</th>
+                  <th class="px-5 py-2.5 font-semibold">Created</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line">

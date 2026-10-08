@@ -56,25 +56,30 @@ defmodule DueDeskWeb.CoreComponents do
   end
 
   @button_variants %{
-    "primary" => "bg-navy text-white shadow-xs hover:bg-navy-hover",
-    "navy" => "bg-navy text-white shadow-xs hover:bg-navy-hover",
-    "secondary" => "bg-[#efefed] text-ink hover:bg-[#e6e6e3]",
-    "outline" => "border border-line bg-white text-ink shadow-xs hover:bg-zinc-50",
-    "ghost" => "text-zinc-600 hover:bg-zinc-100 hover:text-ink",
-    "danger" => "bg-rose-600 text-white shadow-xs hover:bg-rose-700"
+    "primary" => "bg-navy text-white shadow-xs hover:bg-navy-hover active:bg-ink",
+    "navy" => "bg-navy text-white shadow-xs hover:bg-navy-hover active:bg-ink",
+    "secondary" => "bg-[#efefed] text-ink hover:bg-[#e6e6e3] active:bg-[#dededa]",
+    "outline" =>
+      "border border-line bg-white text-ink shadow-xs hover:bg-zinc-50 active:bg-zinc-100",
+    "ghost" => "text-zinc-600 hover:bg-zinc-100 hover:text-ink active:bg-zinc-200/70",
+    "danger" => "bg-rose-600 text-white shadow-xs hover:bg-rose-700 active:bg-rose-800"
   }
 
   @button_sizes %{
     "sm" => "h-8 px-3 text-[13px]",
-    "md" => "h-9 px-3.5 text-sm",
-    "lg" => "h-10 px-4 text-sm"
+    "md" => "h-9 px-3.5 text-[13.5px]",
+    "lg" => "h-10 px-4 text-[13.5px]"
   }
 
   @doc """
   Renders a button, or a link styled as one when `navigate`, `patch`
   or `href` is given.
 
-      <.button>Save</.button>
+  `phx-disable-with` marks a button that shows a spinner over its label
+  while its event runs. The label stays in place, so the button keeps its
+  width; LiveView disables the form's buttons while it submits.
+
+      <.button phx-disable-with>Save</.button>
       <.button variant="secondary" navigate={~p"/dashboard"}>Cancel</.button>
   """
   attr :rest, :global,
@@ -86,34 +91,64 @@ defmodule DueDeskWeb.CoreComponents do
   slot :inner_block, required: true
 
   def button(%{rest: rest} = assigns) do
-    assigns =
-      assign(assigns, :classes, [
-        "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap",
-        "transition duration-150 active:scale-[0.98] cursor-pointer",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
-        "disabled:pointer-events-none disabled:opacity-60 phx-submit-loading:opacity-70",
-        Map.fetch!(@button_variants, assigns.variant),
-        Map.fetch!(@button_sizes, assigns.size),
-        assigns.class
-      ])
+    {loading, rest} = Map.pop(rest, :"phx-disable-with")
 
-    if rest[:href] || rest[:navigate] || rest[:patch] do
-      ~H"""
-      <.link class={@classes} {@rest}>{render_slot(@inner_block)}</.link>
-      """
-    else
-      ~H"""
-      <button class={@classes} {@rest}>{render_slot(@inner_block)}</button>
-      """
+    assigns =
+      assign(assigns,
+        rest: rest,
+        loading: loading != nil,
+        classes: [
+          "inline-flex items-center justify-center gap-1.5 rounded-md font-medium whitespace-nowrap",
+          "transition-colors duration-150 cursor-pointer",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand",
+          "disabled:pointer-events-none disabled:opacity-60",
+          loading != nil && "relative phx-click-loading:pointer-events-none",
+          Map.fetch!(@button_variants, assigns.variant),
+          Map.fetch!(@button_sizes, assigns.size),
+          assigns.class
+        ]
+      )
+
+    cond do
+      rest[:href] || rest[:navigate] || rest[:patch] ->
+        ~H"""
+        <.link class={@classes} {@rest}>{render_slot(@inner_block)}</.link>
+        """
+
+      assigns.loading ->
+        ~H"""
+        <button class={@classes} {@rest}>
+          <span class="inline-flex items-center gap-1.5 [.phx-click-loading>&]:invisible [.phx-submit-loading>&]:invisible">
+            {render_slot(@inner_block)}
+          </span>
+          <span
+            class="absolute inset-0 hidden items-center justify-center [.phx-click-loading>&]:flex [.phx-submit-loading>&]:flex"
+            aria-hidden="true"
+          >
+            <span class="size-4 animate-spin rounded-full border-2 border-current border-r-transparent" />
+          </span>
+        </button>
+        """
+
+      true ->
+        ~H"""
+        <button class={@classes} {@rest}>{render_slot(@inner_block)}</button>
+        """
     end
   end
 
   @doc """
-  Renders a labelled form input with its errors.
+  Renders a labelled form input with one message line underneath.
 
   Pass a `Phoenix.HTML.FormField` as `field`, or every attribute explicitly.
   `icon` adds a leading hero icon; password inputs get a show/hide toggle.
   Setting `class` replaces the default input classes.
+
+  The message line always takes the same space, whether it shows the
+  first error, the hint or nothing, so fields never move when an error
+  appears. Typed fields validate when they lose focus; pass your own
+  `phx-debounce` to change that. Set `messages={false}` for compact
+  controls such as filter bars, which never show errors.
 
       <.input field={@form[:email]} type="email" label="Email" icon="hero-envelope" />
   """
@@ -123,6 +158,7 @@ defmodule DueDeskWeb.CoreComponents do
   attr :value, :any
   attr :icon, :string, default: nil
   attr :hint, :string, default: nil
+  attr :messages, :boolean, default: true
 
   attr :type, :string,
     default: "text",
@@ -160,13 +196,18 @@ defmodule DueDeskWeb.CoreComponents do
 
   def input(%{type: "checkbox"} = assigns) do
     assigns =
-      assign_new(assigns, :checked, fn ->
+      assigns
+      |> assign_new(:checked, fn ->
         Phoenix.HTML.Form.normalize_value("checkbox", assigns[:value])
       end)
+      |> with_messages()
 
     ~H"""
-    <div class="mb-4">
-      <label for={@id} class="inline-flex cursor-pointer items-center gap-2.5 text-sm text-zinc-700">
+    <div class={@messages && "mb-1"}>
+      <label
+        for={@id}
+        class="inline-flex cursor-pointer items-center gap-2.5 text-[13.5px] text-zinc-700"
+      >
         <input
           type="hidden"
           name={@name}
@@ -185,14 +226,16 @@ defmodule DueDeskWeb.CoreComponents do
         />
         {@label}
       </label>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <.message :if={@messages} id={@message_id} errors={@errors} hint={@hint} />
     </div>
     """
   end
 
   def input(%{type: "select"} = assigns) do
+    assigns = with_messages(assigns)
+
     ~H"""
-    <div class="mb-4">
+    <div class={@messages && "mb-1"}>
       <.label :if={@label} for={@id}>{@label}</.label>
       <div class="relative">
         <select
@@ -210,31 +253,33 @@ defmodule DueDeskWeb.CoreComponents do
           class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400"
         />
       </div>
-      <p :if={@hint} class="mt-1.5 text-xs text-zinc-500">{@hint}</p>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <.message :if={@messages} id={@message_id} errors={@errors} hint={@hint} />
     </div>
     """
   end
 
   def input(%{type: "textarea"} = assigns) do
+    assigns = with_messages(assigns)
+
     ~H"""
-    <div class="mb-4">
+    <div class={@messages && "mb-1"}>
       <.label :if={@label} for={@id}>{@label}</.label>
       <textarea
         id={@id}
         name={@name}
-        class={[@class || [field_class(), "h-auto min-h-28 py-3"], @errors != [] && error_class()]}
+        class={[@class || [field_class(), "h-auto min-h-28 py-2.5"], @errors != [] && error_class()]}
         {@rest}
       >{Phoenix.HTML.Form.normalize_value("textarea", @value)}</textarea>
-      <p :if={@hint} class="mt-1.5 text-xs text-zinc-500">{@hint}</p>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <.message :if={@messages} id={@message_id} errors={@errors} hint={@hint} />
     </div>
     """
   end
 
   def input(assigns) do
+    assigns = with_messages(assigns)
+
     ~H"""
-    <div class="mb-4">
+    <div class={@messages && "mb-1"}>
       <.label :if={@label} for={@id}>{@label}</.label>
       <div class="relative">
         <.icon
@@ -256,7 +301,7 @@ defmodule DueDeskWeb.CoreComponents do
         <button
           :if={@type == "password"}
           type="button"
-          class="absolute right-1 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 transition hover:text-zinc-700"
+          class="absolute right-0.5 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-zinc-400 transition-colors hover:text-zinc-700"
           phx-click={toggle_password(@id)}
           aria-label="Show or hide password"
         >
@@ -267,10 +312,29 @@ defmodule DueDeskWeb.CoreComponents do
           /></span>
         </button>
       </div>
-      <p :if={@hint} class="mt-1.5 text-xs text-zinc-500">{@hint}</p>
-      <.error :for={msg <- @errors}>{msg}</.error>
+      <.message :if={@messages} id={@message_id} errors={@errors} hint={@hint} />
     </div>
     """
+  end
+
+  @debounced_types ~w(text email password tel number url textarea)
+
+  # Validates typed fields on blur, links the field to its message line
+  # and marks it invalid when it has an error.
+  defp with_messages(%{rest: rest} = assigns) do
+    message_id = assigns.messages && assigns.id && "#{assigns.id}-message"
+
+    rest =
+      rest
+      |> Map.put_new(:"aria-describedby", message_id)
+      |> Map.put_new(:"aria-invalid", assigns.errors != [] && "true")
+
+    rest =
+      if assigns.type in @debounced_types,
+        do: Map.put_new(rest, :"phx-debounce", "blur"),
+        else: rest
+
+    assign(assigns, rest: rest, message_id: message_id)
   end
 
   attr :for, :string, default: nil
@@ -278,36 +342,55 @@ defmodule DueDeskWeb.CoreComponents do
 
   defp label(assigns) do
     ~H"""
-    <label for={@for} class="mb-1.5 block text-[13px] font-medium text-zinc-600">
+    <label for={@for} class="mb-1.5 block text-[12.5px] font-medium text-zinc-600">
       {render_slot(@inner_block)}
     </label>
     """
   end
 
-  slot :inner_block, required: true
+  attr :id, :string, default: nil
+  attr :errors, :list, required: true
+  attr :hint, :string, default: nil
 
-  defp error(assigns) do
+  # The hint and the first error share one grid cell: the line is as tall
+  # as the hint (or one line), so showing an error never moves the page.
+  defp message(assigns) do
     ~H"""
-    <p class="mt-1.5 flex items-center gap-1.5 text-xs text-rose-600">
-      <.icon name="hero-exclamation-circle-mini" class="size-4 shrink-0" />
-      {render_slot(@inner_block)}
-    </p>
+    <div id={@id} class="mt-1 grid min-h-4 text-xs leading-4" aria-live="polite">
+      <span
+        :if={@hint}
+        class={["col-start-1 row-start-1 text-zinc-500", @errors != [] && "invisible"]}
+      >
+        {@hint}
+      </span>
+      <span
+        :for={msg <- Enum.take(@errors, 1)}
+        class="col-start-1 row-start-1 flex min-w-0 items-center gap-1 text-rose-600"
+      >
+        <.icon name="hero-exclamation-circle-mini" class="size-3.5 shrink-0" />
+        <span class="truncate" title={msg}>{msg}</span>
+      </span>
+    </div>
     """
   end
 
   # Filled grey fields in the app; bordered white fields on auth pages.
+  # Border widths never change, so focus and error states do not move.
   defp field_class do
     [
-      "block h-10 w-full rounded-md border border-transparent bg-field px-3 text-sm text-ink",
-      "placeholder:text-zinc-400 transition duration-150 hover:bg-[#ededeb]",
+      "block h-9 w-full rounded-md border border-transparent bg-field px-3 text-[13.5px] text-ink",
+      "placeholder:text-zinc-400 transition-colors duration-150 hover:bg-[#ededeb]",
       "focus:border-zinc-300 focus:bg-white focus:outline-none focus:ring-3 focus:ring-zinc-900/5",
-      "in-[.auth-shell]:border-zinc-300 in-[.auth-shell]:bg-white in-[.auth-shell]:shadow-xs",
-      "in-[.auth-shell]:hover:border-zinc-400 in-[.auth-shell]:focus:border-zinc-500",
+      "in-[.auth-shell]:h-10 in-[.auth-shell]:border-zinc-300 in-[.auth-shell]:bg-white",
+      "in-[.auth-shell]:shadow-xs in-[.auth-shell]:hover:border-zinc-400",
+      "in-[.auth-shell]:focus:border-zinc-500",
       "read-only:text-zinc-500 in-[.auth-shell]:read-only:bg-zinc-50"
     ]
   end
 
-  defp error_class, do: "border-rose-300 in-[.auth-shell]:border-rose-300 focus:border-rose-400"
+  defp error_class,
+    do:
+      "border-rose-300 in-[.auth-shell]:border-rose-300 focus:border-rose-400 focus:ring-rose-500/10"
 
   defp toggle_password(id) do
     {"type", "text", "password"}

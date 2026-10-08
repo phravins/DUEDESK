@@ -66,14 +66,14 @@ defmodule DueDeskWeb.OrganisationLive.Index do
       </.empty_state>
 
       <div :if={!@empty?} class="overflow-x-auto rounded-lg border border-line bg-white">
-        <table class="w-full min-w-[720px] text-left text-sm">
-          <thead class="border-b border-line bg-[#fafaf9] text-xs font-medium text-zinc-500">
+        <table class="w-full min-w-[720px] text-left text-[13px]">
+          <thead class="border-b border-line bg-[#fafaf9] text-[11px] font-semibold uppercase tracking-[0.06em] text-zinc-500">
             <tr>
-              <th class="px-4 py-3 font-medium">Name</th>
-              <th class="px-4 py-3 font-medium">Type</th>
-              <th class="px-4 py-3 font-medium">Identifier</th>
-              <th class="px-4 py-3 font-medium">GSTIN</th>
-              <th class="px-4 py-3 text-right font-medium">Active DueItems</th>
+              <th class="px-4 py-2.5 font-semibold">Name</th>
+              <th class="px-4 py-2.5 font-semibold">Type</th>
+              <th class="px-4 py-2.5 font-semibold">Identifier</th>
+              <th class="px-4 py-2.5 font-semibold">GSTIN</th>
+              <th class="px-4 py-2.5 text-right font-semibold">Active DueItems</th>
             </tr>
           </thead>
           <tbody id="organisations" phx-update="stream" class="divide-y divide-line">

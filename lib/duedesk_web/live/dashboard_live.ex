@@ -38,7 +38,6 @@ defmodule DueDeskWeb.DashboardLive do
             else: "The DueItems you are responsible for, and what needs attention next."}
         </:subtitle>
         <:actions>
-          <.pill icon="hero-calendar-days">{Calendar.strftime(@today, "%a")}, {date(@today)}</.pill>
           <.button variant="secondary" navigate={~p"/due-items"}>View DueItems</.button>
           <.button navigate={~p"/due-items/new"}>
             <.icon name="hero-plus" class="size-4" /> Create DueItem

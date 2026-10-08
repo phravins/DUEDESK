@@ -65,7 +65,7 @@ defmodule DueDeskWeb.UIComponents do
 
     ~H"""
     <span class={[
-      "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+      "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ring-1 ring-inset",
       @s.class,
       @class
     ]}>
@@ -87,23 +87,25 @@ defmodule DueDeskWeb.UIComponents do
 
   def page_header(assigns) do
     ~H"""
-    <div class="mb-8 border-b border-line pb-6">
-      <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <h1 class="flex min-w-0 items-center gap-2.5 text-[22px] leading-tight tracking-[-0.02em] text-ink sm:text-[26px]">
-          <span :if={@eyebrow} class="flex shrink-0 items-center gap-2 text-zinc-400">
-            <.icon name={@icon} class="size-5 sm:size-6" />
-            <span class="truncate">{@eyebrow}</span>
-            <span class="size-1 rounded-full bg-zinc-300" aria-hidden="true" />
-          </span>
-          <span class="truncate">{@title}</span>
+    <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div class="min-w-0">
+        <p
+          :if={@eyebrow}
+          class="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-400"
+        >
+          <.icon name={@icon} class="size-3.5" />
+          <span class="truncate">{@eyebrow}</span>
+        </p>
+        <h1 class="truncate text-xl font-semibold leading-7 tracking-[-0.015em] text-ink">
+          {@title}
         </h1>
-        <div :if={@actions != []} class="flex flex-wrap items-center gap-2">
-          {render_slot(@actions)}
-        </div>
+        <p :if={@subtitle != []} class="mt-0.5 max-w-2xl text-[13px] text-muted">
+          {render_slot(@subtitle)}
+        </p>
       </div>
-      <p :if={@subtitle != []} class="mt-2 max-w-2xl text-sm text-muted">
-        {render_slot(@subtitle)}
-      </p>
+      <div :if={@actions != []} class="flex shrink-0 flex-wrap items-center gap-2">
+        {render_slot(@actions)}
+      </div>
     </div>
     """
   end
@@ -116,7 +118,7 @@ defmodule DueDeskWeb.UIComponents do
 
   def pill(assigns) do
     ~H"""
-    <span class="inline-flex h-9 items-center gap-2 rounded-md border border-line bg-white px-3 text-sm text-zinc-600">
+    <span class="inline-flex h-9 items-center gap-2 rounded-md border border-line bg-white px-3 text-[13px] text-zinc-600">
       <.icon :if={@icon} name={@icon} class="size-4 text-zinc-400" />
       {render_slot(@inner_block)}
     </span>
@@ -139,10 +141,10 @@ defmodule DueDeskWeb.UIComponents do
     ~H"""
     <section id={@id} class={["rounded-lg border border-line bg-white", @class]} {@rest}>
       <div class="p-5">
-        <div :if={@title} class="mb-5 flex items-start justify-between gap-4">
+        <div :if={@title} class="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 class="text-[15px] font-semibold text-ink">{@title}</h2>
-            <p :if={@subtitle != []} class="mt-0.5 text-sm text-muted">
+            <h2 class="text-sm font-semibold text-ink">{@title}</h2>
+            <p :if={@subtitle != []} class="mt-0.5 text-[13px] text-muted">
               {render_slot(@subtitle)}
             </p>
           </div>
@@ -150,7 +152,7 @@ defmodule DueDeskWeb.UIComponents do
         </div>
         {render_slot(@inner_block)}
       </div>
-      <div :if={@footer != []} class="border-t border-line px-5 py-3 text-sm">
+      <div :if={@footer != []} class="border-t border-line px-5 py-3 text-[13px]">
         {render_slot(@footer)}
       </div>
     </section>
@@ -197,22 +199,27 @@ defmodule DueDeskWeb.UIComponents do
       class="group flex flex-col rounded-lg border border-line bg-white transition duration-200 hover:border-zinc-300 hover:shadow-xs"
     >
       <div class="p-5">
-        <div class="flex items-center justify-between gap-3">
-          <p class="flex items-center gap-2 text-sm text-zinc-600">
-            <span class={["size-2 rounded-full", @s.dot]} />
+        <div class="flex items-start justify-between gap-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
             {@label}
           </p>
-          <span class="flex size-7 items-center justify-center rounded-full bg-[#efefed] text-zinc-500 transition group-hover:bg-navy group-hover:text-white">
-            <.icon name="hero-arrow-up-right-mini" class="size-4" />
+          <span class={[
+            "flex size-8 items-center justify-center rounded-lg ring-1 ring-inset transition-colors",
+            @s.class
+          ]}>
+            <.icon name={@s.icon} class="size-4" />
           </span>
         </div>
-        <p class="mt-5 text-[40px] font-medium leading-none tracking-[-0.04em] text-ink tabular-nums">
+        <p class="mt-2 text-[30px] font-semibold leading-none tracking-[-0.03em] text-ink tabular-nums">
           {@count}
         </p>
       </div>
-      <div class="mt-auto flex items-center justify-between gap-2 border-t border-line px-5 py-3">
-        <.status_badge status={@status} />
-        <span class="truncate text-xs text-zinc-400">{@hint}</span>
+      <div class="mt-auto flex items-center justify-between gap-2 border-t border-line px-5 py-2.5">
+        <span class="truncate text-xs text-zinc-500">{@hint}</span>
+        <.icon
+          name="hero-arrow-right-mini"
+          class="size-4 shrink-0 text-zinc-300 transition-colors group-hover:text-ink"
+        />
       </div>
     </.link>
     """
@@ -244,7 +251,7 @@ defmodule DueDeskWeb.UIComponents do
 
     ~H"""
     <div>
-      <div class="mb-2 flex items-baseline justify-between gap-3 text-sm">
+      <div class="mb-2 flex items-baseline justify-between gap-3 text-[13px]">
         <span class="text-zinc-600">{@label}</span>
         <span class="font-medium text-ink tabular-nums">{@text}</span>
       </div>
@@ -283,8 +290,8 @@ defmodule DueDeskWeb.UIComponents do
       <div class="mx-auto flex size-11 items-center justify-center rounded-full bg-[#efefed] text-zinc-500">
         <.icon name={@icon} class="size-5" />
       </div>
-      <h3 class="mt-4 text-base font-semibold text-ink">{@title}</h3>
-      <div :if={@inner_block != []} class="mx-auto mt-1.5 max-w-md text-sm text-muted">
+      <h3 class="mt-4 text-[15px] font-semibold text-ink">{@title}</h3>
+      <div :if={@inner_block != []} class="mx-auto mt-1.5 max-w-md text-[13px] text-muted">
         {render_slot(@inner_block)}
       </div>
       <div :if={@action != []} class="mt-6 flex flex-wrap justify-center gap-2">
@@ -305,15 +312,18 @@ defmodule DueDeskWeb.UIComponents do
 
   def auth_heading(assigns) do
     ~H"""
-    <div class="mb-8">
-      <p :if={@eyebrow} class="mb-3 text-xs font-medium uppercase tracking-[0.12em] text-zinc-400">
+    <div class="mb-7">
+      <p
+        :if={@eyebrow}
+        class="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-zinc-400"
+      >
         {@eyebrow}
       </p>
-      <h1 class="text-2xl font-semibold leading-tight tracking-[-0.02em]">
+      <h1 class="text-[22px] font-semibold leading-tight tracking-[-0.02em]">
         <span class="block text-ink">{@title}</span>
         <span :if={@tagline} class="block text-zinc-400">{@tagline}</span>
       </h1>
-      <p :if={@inner_block != []} class="mt-3 text-sm leading-relaxed text-muted">
+      <p :if={@inner_block != []} class="mt-3 text-[13.5px] leading-relaxed text-muted">
         {render_slot(@inner_block)}
       </p>
     </div>
@@ -345,7 +355,7 @@ defmodule DueDeskWeb.UIComponents do
         patch={tab.patch}
         aria-current={tab[:active] && "page"}
         class={[
-          "-mb-px inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition",
+          "-mb-px inline-flex items-center gap-2 border-b-2 pb-2.5 text-[13.5px] font-medium transition-colors",
           if(tab[:active],
             do: "border-ink text-ink",
             else: "border-transparent text-zinc-500 hover:text-ink"
@@ -384,7 +394,7 @@ defmodule DueDeskWeb.UIComponents do
       <span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
         <.icon name="hero-sparkles-mini" class="size-4" />
       </span>
-      <p class="min-w-0 flex-1 text-sm text-amber-900">{@message}</p>
+      <p class="min-w-0 flex-1 text-[13px] text-amber-900">{@message}</p>
       <.link
         :if={@plans_link}
         navigate="/account/plans"
@@ -434,9 +444,9 @@ defmodule DueDeskWeb.UIComponents do
 
   def detail(assigns) do
     ~H"""
-    <div id={@id} class="grid gap-1 py-3 sm:grid-cols-3 sm:gap-4">
-      <dt class="text-sm text-muted">{@label}</dt>
-      <dd class="min-w-0 wrap-break-word text-sm text-ink sm:col-span-2">
+    <div id={@id} class="grid gap-1 py-2.5 sm:grid-cols-3 sm:gap-4">
+      <dt class="text-[13px] text-muted">{@label}</dt>
+      <dd class="min-w-0 wrap-break-word text-[13px] text-ink sm:col-span-2">
         {render_slot(@inner_block)}
       </dd>
     </div>

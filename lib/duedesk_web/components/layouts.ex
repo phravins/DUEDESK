@@ -70,7 +70,7 @@ defmodule DueDeskWeb.Layouts do
         </div>
       </header>
 
-      <main class="flex flex-1 justify-center px-5 pb-16 pt-8 sm:pt-[12vh]">
+      <main class="flex flex-1 justify-center px-5 pb-16 pt-8 sm:pt-20">
         <div class={["w-full", if(@wide, do: "max-w-[440px]", else: "max-w-[360px]")]}>
           {render_slot(@inner_block)}
         </div>
@@ -90,7 +90,8 @@ defmodule DueDeskWeb.Layouts do
 
   @doc """
   The signed-in application shell: a left sidebar with the navigation, a
-  Create DueItem button and the account menu.
+  Create DueItem button and the account menu, and a top bar with the date
+  and time in the account's timezone.
 
   Navigation is built from the scope's role:
 
@@ -109,7 +110,15 @@ defmodule DueDeskWeb.Layouts do
       |> nav_items()
       |> Enum.split_with(&(&1.key not in [:account, :support]))
 
-    assigns = assign(assigns, main_nav: main, footer_nav: footer)
+    tz = assigns.current_scope.customer_account.timezone
+
+    assigns =
+      assign(assigns,
+        main_nav: main,
+        footer_nav: footer,
+        timezone: tz,
+        now: DateTime.now!(tz)
+      )
 
     ~H"""
     <div class="min-h-screen bg-white">
@@ -135,10 +144,10 @@ defmodule DueDeskWeb.Layouts do
 
       <aside
         id="sidebar"
-        class="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-line bg-[#fbfbfa] transition-transform duration-200 ease-out max-lg:-translate-x-full"
+        class="fixed inset-y-0 left-0 z-50 flex w-56 flex-col border-r border-line bg-[#fbfbfa] transition-transform duration-200 ease-out max-lg:-translate-x-full"
       >
-        <div class="flex h-16 shrink-0 items-center justify-between px-5">
-          <.link navigate={~p"/dashboard"} aria-label="Dashboard"><.logo class="h-7" /></.link>
+        <div class="flex h-14 shrink-0 items-center justify-between px-4">
+          <.link navigate={~p"/dashboard"} aria-label="Dashboard"><.logo class="h-6" /></.link>
           <button
             type="button"
             class="flex size-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 lg:hidden"
@@ -161,53 +170,64 @@ defmodule DueDeskWeb.Layouts do
               type="search"
               name="q"
               placeholder="Search"
-              class="h-9 w-full rounded-md border border-transparent bg-[#efefed] pl-9 pr-3 text-sm placeholder:text-zinc-500 transition focus:border-zinc-300 focus:bg-white focus:outline-none"
+              class="h-8 w-full rounded-md border border-transparent bg-[#efefed] pl-9 pr-3 text-[13px] placeholder:text-zinc-500 transition-colors focus:border-zinc-300 focus:bg-white focus:outline-none"
             />
           </label>
         </form>
 
-        <nav id="main-nav" aria-label="Main" class="flex-1 space-y-0.5 overflow-y-auto px-3">
-          <.nav_link :for={item <- @main_nav} item={item} active={@active} />
+        <nav id="main-nav" aria-label="Main" class="flex-1 overflow-y-auto px-3 pt-2">
+          <p class={section_label()}>Workspace</p>
+          <div class="space-y-px">
+            <.nav_link :for={item <- @main_nav} item={item} active={@active} />
+          </div>
         </nav>
 
-        <div class="space-y-0.5 px-3 pb-3">
-          <.button navigate={~p"/due-items/new"} size="lg" class="mb-3 w-full">
+        <div class="px-3 pb-3">
+          <.button navigate={~p"/due-items/new"} class="mb-3 w-full">
             <.icon name="hero-plus" class="size-4" /> Create DueItem
           </.button>
-          <.nav_link :for={item <- @footer_nav} item={item} active={@active} small />
-          <.link
-            navigate={~p"/users/settings"}
-            class={[nav_class(@active == :profile), "py-1.5 text-sm"]}
-          >
-            <.icon name="hero-user-circle" class="size-[18px] text-zinc-500" /> My profile
-          </.link>
+          <p class={section_label()}>Settings</p>
+          <div class="space-y-px">
+            <.nav_link :for={item <- @footer_nav} item={item} active={@active} />
+            <.nav_link
+              item={
+                %{
+                  key: :profile,
+                  label: "My profile",
+                  icon: "hero-user-circle",
+                  path: ~p"/users/settings"
+                }
+              }
+              active={@active}
+            />
+          </div>
         </div>
 
         <div class="relative border-t border-line p-3">
           <button
             type="button"
             id="user-menu-button"
-            class="flex w-full items-center gap-3 rounded-md p-2 text-left transition hover:bg-zinc-100"
+            class="flex w-full items-center gap-2.5 rounded-md p-1.5 text-left transition-colors hover:bg-zinc-100"
             phx-click={toggle_menu("#user-menu")}
             aria-haspopup="true"
           >
             <span class={[
-              "flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white",
+              "flex size-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white",
               avatar_colour(@current_scope.customer_account.name)
             ]}>
               {initials(@current_scope.customer_account.name)}
             </span>
             <span class="min-w-0 flex-1">
-              <span id="account-name" class="block truncate text-sm font-medium text-ink">
+              <span id="account-name" class="block truncate text-[13px] font-medium text-ink">
                 {@current_scope.customer_account.name}
               </span>
-              <span class="block truncate text-xs text-muted">{role_label(@current_scope)}</span>
+              <span class="block truncate text-[11.5px] text-muted">{role_label(@current_scope)}</span>
             </span>
             <.icon name="hero-chevron-up-down-mini" class="size-4 shrink-0 text-zinc-400" />
           </button>
           <div
             id="user-menu"
-            class="absolute inset-x-3 bottom-full mb-1 hidden rounded-lg border border-line bg-white p-1.5 text-sm shadow-float"
+            class="absolute inset-x-3 bottom-full mb-1 hidden rounded-lg border border-line bg-white p-1.5 text-[13px] shadow-float"
             phx-click-away={hide("#user-menu")}
           >
             <div class="px-2.5 py-2">
@@ -226,11 +246,53 @@ defmodule DueDeskWeb.Layouts do
         </div>
       </aside>
 
-      <main class="lg:pl-64">
-        <div class="mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-8 lg:px-10 lg:pt-8">
-          {render_slot(@inner_block)}
-        </div>
-      </main>
+      <div class="lg:pl-56">
+        <header class="sticky top-0 z-20 hidden h-12 items-center justify-between border-b border-line bg-white/90 px-8 backdrop-blur lg:flex">
+          <p class="flex items-center gap-2 text-[13px] text-zinc-500">
+            <.icon name="hero-calendar-days" class="size-4 text-zinc-400" />
+            <span
+              id="account-clock"
+              phx-hook=".AccountClock"
+              phx-update="ignore"
+              data-timezone={@timezone}
+              class="tabular-nums"
+            >
+              {date(@now)} · {Calendar.strftime(@now, "%-I:%M %p")}
+            </span>
+          </p>
+          <.link
+            navigate={~p"/users/settings"}
+            class="flex items-center gap-2 rounded-md px-2 py-1 text-[13px] text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-ink"
+          >
+            <span class="flex size-6 items-center justify-center rounded-full bg-[#efefed] text-[10px] font-semibold text-zinc-600">
+              {initials(@current_scope.user.name)}
+            </span>
+            <span id="topbar-user" class="max-w-48 truncate">{@current_scope.user.name}</span>
+          </.link>
+        </header>
+        <script :type={Phoenix.LiveView.ColocatedHook} name=".AccountClock">
+          export default {
+            mounted() {
+              const timeZone = this.el.dataset.timezone
+              const date = new Intl.DateTimeFormat("en-GB", {timeZone, day: "2-digit", month: "short", year: "numeric"})
+              const time = new Intl.DateTimeFormat("en-US", {timeZone, hour: "numeric", minute: "2-digit"})
+              const tick = () => {
+                const now = new Date()
+                this.el.textContent = `${date.format(now)} · ${time.format(now)}`
+              }
+              tick()
+              this.timer = setInterval(tick, 15000)
+            },
+            destroyed() { clearInterval(this.timer) }
+          }
+        </script>
+
+        <main>
+          <div class="mx-auto max-w-[1280px] px-4 pb-16 pt-6 sm:px-8">
+            {render_slot(@inner_block)}
+          </div>
+        </main>
+      </div>
     </div>
     <.flash_group flash={@flash} />
     """
@@ -238,33 +300,31 @@ defmodule DueDeskWeb.Layouts do
 
   attr :item, :map, required: true
   attr :active, :atom, default: nil
-  attr :small, :boolean, default: false
 
   defp nav_link(assigns) do
     ~H"""
     <.link
       navigate={@item.path}
       aria-current={@item.key == @active && "page"}
-      class={[nav_class(@item.key == @active), if(@small, do: "py-1.5 text-sm", else: "text-[15px]")]}
+      class={[
+        "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13.5px] font-medium transition-colors",
+        if(@item.key == @active,
+          do: "bg-brand-soft text-brand",
+          else: "text-zinc-600 hover:bg-[#f1f1ef] hover:text-ink"
+        )
+      ]}
     >
       <.icon
         name={@item.icon}
-        class={[
-          if(@small, do: "size-[18px]", else: "size-5"),
-          if(@item.key == @active, do: "text-ink", else: "text-zinc-500")
-        ]}
+        class={["size-4", if(@item.key == @active, do: "text-brand", else: "text-zinc-400")]}
       />
       {@item.label}
     </.link>
     """
   end
 
-  defp nav_class(true),
-    do: "flex items-center gap-3 rounded-md bg-[#ececea] px-3 py-2 font-medium text-ink"
-
-  defp nav_class(false) do
-    "flex items-center gap-3 rounded-md px-3 py-2 font-medium text-zinc-600 transition hover:bg-[#f1f1ef] hover:text-ink"
-  end
+  defp section_label,
+    do: "mb-1.5 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-400"
 
   defp menu_item do
     "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-zinc-700 transition hover:bg-zinc-100 hover:text-ink"

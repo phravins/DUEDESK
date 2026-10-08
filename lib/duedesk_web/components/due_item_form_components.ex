@@ -186,6 +186,7 @@ defmodule DueDeskWeb.DueItemFormComponents do
               max={ReminderRule.max_days()}
               placeholder="Days"
               aria-label="Days"
+              messages={false}
             />
           </div>
           <div class="w-36">
@@ -196,6 +197,7 @@ defmodule DueDeskWeb.DueItemFormComponents do
               value={@custom["direction"]}
               options={[{"days before", "before"}, {"days after", "after"}]}
               aria-label="Before or after"
+              messages={false}
             />
           </div>
           <.button id="add-reminder" type="button" variant="secondary" phx-click="add_reminder">
