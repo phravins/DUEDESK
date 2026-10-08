@@ -37,6 +37,27 @@ defmodule DueDesk.Release do
     :ok
   end
 
+  @doc """
+  Queues today's reminders for every active account now, without waiting
+  for the 15-minute schedule. Run with
+  `bin/duedesk eval "DueDesk.Release.run_reminders()"` (or
+  `mix run -e "DueDesk.Release.run_reminders()"` in development, with the
+  server running so the queued emails are sent).
+  """
+  def run_reminders do
+    load_app()
+    {:ok, _} = Application.ensure_all_started(@app)
+
+    import Ecto.Query
+
+    DueDesk.Repo.all(from(a in DueDesk.Tenancy.CustomerAccount, where: a.status == "active"))
+    |> Enum.map(fn account ->
+      {:ok, queued} = DueDesk.Notifications.queue_reminders(account)
+      queued
+    end)
+    |> Enum.sum()
+  end
+
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
   end

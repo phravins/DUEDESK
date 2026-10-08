@@ -245,4 +245,42 @@ defmodule DueDeskWeb.UserLive.SettingsTest do
       assert message == "You must log in to access this page."
     end
   end
+
+  describe "notifications form" do
+    setup %{conn: conn} do
+      scope = account_scope_fixture()
+      %{conn: log_in_user(conn, scope.user), scope: scope}
+    end
+
+    test "says when WhatsApp is unavailable", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+      assert has_element?(lv, "#notification-form")
+      assert has_element?(lv, "#whatsapp-unavailable")
+      assert render(lv) =~ "reminders on WhatsApp at +91 "
+    end
+
+    test "turning WhatsApp on needs consent", %{conn: conn, scope: scope} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      html =
+        lv
+        |> form("#notification-form", notifications: %{notify_whatsapp: "true"})
+        |> render_change()
+
+      assert html =~ "agree to WhatsApp messages first"
+
+      lv
+      |> form("#notification-form",
+        notifications: %{notify_email: "false", notify_whatsapp: "true", whatsapp_consent: "true"}
+      )
+      |> render_submit()
+
+      assert render(lv) =~ "Notification settings saved."
+
+      membership = DueDesk.Repo.get!(DueDesk.Tenancy.Membership, scope.membership.id)
+      refute membership.notify_email
+      assert membership.notify_whatsapp
+      assert membership.whatsapp_consent_at
+    end
+  end
 end

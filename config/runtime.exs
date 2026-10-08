@@ -7,6 +7,17 @@ end
 config :duedesk, DueDeskWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
+# WhatsApp reminders: a signed webhook to the messaging workflow. Without
+# N8N_WEBHOOK_URL the channel shows as unavailable. Not used in tests.
+if config_env() != :test and System.get_env("N8N_WEBHOOK_URL", "") != "" do
+  config :duedesk, DueDesk.Notifications.WhatsApp,
+    adapter: DueDesk.Notifications.WhatsApp.N8n,
+    url: System.fetch_env!("N8N_WEBHOOK_URL"),
+    signing_secret:
+      System.get_env("N8N_SIGNING_SECRET", "") |> then(&if(&1 == "", do: nil, else: &1)) ||
+        raise("environment variable N8N_SIGNING_SECRET is missing (N8N_WEBHOOK_URL is set)")
+end
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -63,6 +74,39 @@ if config_env() == :prod do
       Set S3_BUCKET (with S3_REGION, S3_ENDPOINT, S3_ACCESS_KEY_ID and
       S3_SECRET_ACCESS_KEY) or UPLOADS_DIR.
       """
+  end
+
+  # Email: one of the Swoosh API adapters (they use Req; no extra deps).
+  mail_adapters = %{
+    "postmark" => Swoosh.Adapters.Postmark,
+    "brevo" => Swoosh.Adapters.Brevo,
+    "resend" => Swoosh.Adapters.Resend,
+    "mailgun" => Swoosh.Adapters.Mailgun
+  }
+
+  mail_adapter =
+    Map.get(mail_adapters, env.("MAIL_ADAPTER") || "") ||
+      raise """
+      environment variable MAIL_ADAPTER is missing or unknown.
+      Use one of: #{Enum.join(Map.keys(mail_adapters), ", ")}
+      """
+
+  mail_api_key = env.("MAIL_API_KEY") || raise "environment variable MAIL_API_KEY is missing"
+
+  config :duedesk,
+         DueDesk.Mailer,
+         [adapter: mail_adapter, api_key: mail_api_key] ++
+           if(mail_adapter == Swoosh.Adapters.Mailgun,
+             do: [
+               domain:
+                 env.("MAIL_DOMAIN") ||
+                   raise("environment variable MAIL_DOMAIN is missing (needed for mailgun)")
+             ],
+             else: []
+           )
+
+  if from = env.("MAIL_FROM") do
+    config :duedesk, :mail_from, {"DueDesk", from}
   end
 
   config :duedesk, DueDeskWeb.Endpoint,

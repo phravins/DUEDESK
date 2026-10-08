@@ -42,6 +42,27 @@ config :duedesk, DueDesk.Documents.Storage,
 
 config :duedesk, :document_max_file_size, 30 * 1024 * 1024
 
+# Background jobs. The reminder scan runs every 15 minutes; storage
+# counters are reconciled nightly (both in the account timezone of India).
+config :duedesk, Oban,
+  engine: Oban.Engines.Basic,
+  repo: DueDesk.Repo,
+  queues: [reminders: 5, email: 10, whatsapp: 5, maintenance: 1],
+  plugins: [
+    {Oban.Plugins.Pruner, max_age: 7 * 24 * 60 * 60},
+    Oban.Plugins.Lifeline,
+    {Oban.Plugins.Cron,
+     timezone: "Asia/Kolkata",
+     crontab: [
+       {"*/15 * * * *", DueDesk.Notifications.Workers.ReminderScanWorker},
+       {"30 2 * * *", DueDesk.Notifications.Workers.StorageReconcileWorker}
+     ]}
+  ]
+
+# WhatsApp reminders go out through a signed webhook when N8N_WEBHOOK_URL
+# is set (config/runtime.exs); otherwise the channel is unavailable.
+config :duedesk, DueDesk.Notifications.WhatsApp, adapter: DueDesk.Notifications.WhatsApp.Disabled
+
 config :duedesk,
   namespace: DueDesk,
   ecto_repos: [DueDesk.Repo],

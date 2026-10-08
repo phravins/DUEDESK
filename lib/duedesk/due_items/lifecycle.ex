@@ -36,7 +36,7 @@ defmodule DueDesk.DueItems.Lifecycle do
 
   alias Ecto.Changeset
   alias Ecto.Multi
-  alias DueDesk.{Audit, Documents, DueItems, Permissions, Repo, Tenancy}
+  alias DueDesk.{Audit, Documents, DueItems, Notifications, Permissions, Repo, Tenancy}
   alias DueDesk.Accounts.Scope
   alias DueDesk.DueItems.{Completion, Cycle, DueItem, Recurrence, ReminderRule}
 
@@ -139,6 +139,7 @@ defmodule DueDesk.DueItems.Lifecycle do
           do: Documents.multi_attach(multi, scope, fresh, & &1.closed, "completion", uploads),
           else: Documents.multi_attach(multi, scope, fresh, & &1.cycle, "current", uploads)
       end)
+      |> notify_admins("renewal_review", scope, not Permissions.can_manage_due_items?(scope))
       |> Audit.multi_log(:audit, scope, "due_item.renewed", fresh,
         changes: fn %{locked: locked, cycle: cycle} ->
           %{"completed_on" => [nil, iso(completion.completed_on)]}
@@ -185,12 +186,23 @@ defmodule DueDesk.DueItems.Lifecycle do
         )
       end)
       |> Documents.multi_attach(scope, fresh, & &1.closed, "completion", uploads)
+      |> notify_admins("awaiting_disposition", scope, true)
       |> Audit.multi_log(:audit, scope, "due_item.completed", fresh,
         changes: %{"completed_on" => [nil, iso(completion.completed_on)]}
       )
       |> Repo.transaction()
       |> lifecycle_result()
     end
+  end
+
+  # Tells the Administrators and Super Admins about the closed cycle.
+  defp notify_admins(multi, _kind, _scope, false), do: multi
+
+  defp notify_admins(multi, kind, scope, true) do
+    Notifications.multi_notify(multi, :notify, kind, scope, fn %{closed: closed, item: item} ->
+      admins = Notifications.admin_ids(item.customer_account_id)
+      {item, closed.id, for(id <- admins, do: {closed.id, id})}
+    end)
   end
 
   # Reloads the item as the scope sees it, checks it has not moved on
@@ -410,6 +422,10 @@ defmodule DueDesk.DueItems.Lifecycle do
     end)
     |> Multi.run(:reminders, fn repo, _ -> replace_reminders(repo, prepared, offsets) end)
     |> apply_assignment_plan(scope, prepared, plan)
+    |> Notifications.multi_notify(:notify, "assignment", scope, fn changes ->
+      %{item: item, cycle: cycle, assigned: {_, assigned}} = changes
+      {item, cycle.id, Enum.map(assigned, &{&1.id, &1.user_id})}
+    end)
     |> Audit.multi_log(
       :audit,
       scope,

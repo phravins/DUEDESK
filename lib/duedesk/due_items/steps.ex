@@ -139,9 +139,14 @@ defmodule DueDesk.DueItems.Steps do
     |> Multi.update_all(:ended, from(a in Assignment, where: a.id in ^to_end),
       set: [ended_at: now, updated_at: now]
     )
-    |> Multi.insert_all(:assigned, Assignment, fn _ ->
-      for {user_id, role} <- new_rows, do: assignment_row(scope, item, user_id, role, now)
-    end)
+    |> Multi.insert_all(
+      :assigned,
+      Assignment,
+      fn _ ->
+        for {user_id, role} <- new_rows, do: assignment_row(scope, item, user_id, role, now)
+      end,
+      returning: [:id, :user_id]
+    )
   end
 
   @doc "Assignees must be active members of the account."

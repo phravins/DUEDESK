@@ -110,6 +110,110 @@ defmodule DueDesk.Tenancy do
     |> Repo.one!()
   end
 
+  ## Notification preferences
+
+  @notification_types %{
+    notify_email: :boolean,
+    notify_whatsapp: :boolean,
+    whatsapp_consent: :boolean
+  }
+
+  @doc """
+  Returns a changeset for the scope's own notification preferences:
+  Email reminders, WhatsApp reminders and consent to WhatsApp messages.
+  WhatsApp needs both the consent and a mobile number on the profile.
+  """
+  def change_notification_preferences(%Scope{membership: %Membership{} = m} = scope, attrs \\ %{}) do
+    data = %{
+      notify_email: m.notify_email,
+      notify_whatsapp: m.notify_whatsapp,
+      whatsapp_consent: not is_nil(m.whatsapp_consent_at)
+    }
+
+    {data, @notification_types}
+    |> Ecto.Changeset.cast(attrs, Map.keys(@notification_types))
+    |> validate_whatsapp(scope)
+  end
+
+  defp validate_whatsapp(changeset, %Scope{user: user}) do
+    cond do
+      Ecto.Changeset.get_field(changeset, :notify_whatsapp) != true ->
+        changeset
+
+      Ecto.Changeset.get_field(changeset, :whatsapp_consent) != true ->
+        Ecto.Changeset.add_error(changeset, :whatsapp_consent, "agree to WhatsApp messages first")
+
+      is_nil(user.mobile_number) ->
+        Ecto.Changeset.add_error(
+          changeset,
+          :notify_whatsapp,
+          "add a mobile number to your profile first"
+        )
+
+      true ->
+        changeset
+    end
+  end
+
+  @doc """
+  Saves the scope's own notification preferences. Consent is stamped when
+  it is first given and cleared when it is withdrawn. Audited as
+  `membership.notifications_changed`.
+
+  Returns `{:ok, membership}` or `{:error, changeset}`.
+  """
+  def update_notification_preferences(%Scope{membership: %Membership{}} = scope, attrs) do
+    changeset = change_notification_preferences(scope, attrs)
+
+    with {:ok, prefs} <- Ecto.Changeset.apply_action(changeset, :update) do
+      account_id = Scope.account_id!(scope)
+
+      membership =
+        Repo.one!(
+          from(m in Membership,
+            where: m.id == ^scope.membership.id and m.customer_account_id == ^account_id
+          )
+        )
+
+      consent_at =
+        if prefs.whatsapp_consent, do: membership.whatsapp_consent_at || DateTime.utc_now(:second)
+
+      update =
+        Ecto.Changeset.change(membership,
+          notify_email: prefs.notify_email,
+          notify_whatsapp: prefs.notify_whatsapp,
+          whatsapp_consent_at: consent_at
+        )
+
+      changes =
+        for {field, old, new} <- [
+              {"notify_email", membership.notify_email, prefs.notify_email},
+              {"notify_whatsapp", membership.notify_whatsapp, prefs.notify_whatsapp},
+              {"whatsapp_consent", not is_nil(membership.whatsapp_consent_at),
+               prefs.whatsapp_consent}
+            ],
+            old != new,
+            into: %{},
+            do: {field, [old, new]}
+
+      Multi.new()
+      |> Multi.update(:membership, update)
+      |> then(fn multi ->
+        if changes == %{},
+          do: multi,
+          else:
+            Audit.multi_log(multi, :audit, scope, "membership.notifications_changed", membership,
+              changes: changes
+            )
+      end)
+      |> Repo.transaction()
+      |> case do
+        {:ok, %{membership: updated}} ->
+          {:ok, %{updated | customer_account: scope.customer_account}}
+      end
+    end
+  end
+
   ## Account helpers
 
   @doc """

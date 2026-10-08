@@ -28,7 +28,7 @@ defmodule DueDesk.DueItems do
     ]
 
   alias Ecto.Multi
-  alias DueDesk.{Audit, Permissions, Repo, Tenancy}
+  alias DueDesk.{Audit, Notifications, Permissions, Repo, Tenancy}
   alias DueDesk.Accounts.Scope
   alias DueDesk.DueItems.{Assignment, Category, Cycle, DueItem, Lifecycle, Note, Queries}
   alias DueDesk.DueItems.{ReminderRule, Status}
@@ -453,8 +453,17 @@ defmodule DueDesk.DueItems do
       |> Multi.insert_all(:reminders, ReminderRule, fn %{item: item} ->
         reminder_rows(item, item.reminder_offsets)
       end)
-      |> Multi.insert_all(:assignments, Assignment, fn %{item: item} ->
-        assignment_rows(scope, item, item.primary_user_id, item.additional_user_ids)
+      |> Multi.insert_all(
+        :assignments,
+        Assignment,
+        fn %{item: item} ->
+          assignment_rows(scope, item, item.primary_user_id, item.additional_user_ids)
+        end,
+        returning: [:id, :user_id]
+      )
+      |> Notifications.multi_notify(:notify, "assignment", scope, fn changes ->
+        %{item: item, cycle: cycle, assignments: {_, assigned}} = changes
+        {item, cycle.id, Enum.map(assigned, &{&1.id, &1.user_id})}
       end)
       |> Audit.multi_log(:audit, scope, "due_item.created", & &1.item,
         changes: fn %{item: item} ->
@@ -663,6 +672,9 @@ defmodule DueDesk.DueItems do
       Multi.new()
       |> apply_assignment_plan(scope, item, plan)
       |> Multi.update(:item, Ecto.Changeset.change(item, updated_at: DateTime.utc_now(:second)))
+      |> Notifications.multi_notify(:notify, "assignment", scope, fn %{assigned: {_, assigned}} ->
+        {item, item.current_cycle_id, Enum.map(assigned, &{&1.id, &1.user_id})}
+      end)
       |> Audit.multi_log(:audit, scope, "due_item.assigned", item, changes: changes)
       |> Repo.transaction()
       |> case do

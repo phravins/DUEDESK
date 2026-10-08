@@ -10,6 +10,7 @@ defmodule DueDesk.Application do
       DueDesk.Repo,
       {DNSCluster, query: Application.get_env(:duedesk, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: DueDesk.PubSub},
+      {Oban, Application.fetch_env!(:duedesk, Oban)},
       DueDeskWeb.Endpoint
     ]
 

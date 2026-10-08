@@ -17,7 +17,8 @@ defmodule DueDeskWeb.DueItemLive.Show do
   import DueDeskWeb.DueItemComponents
   import DueDeskWeb.DocumentComponents
 
-  alias DueDesk.{Billing, Documents, DueItems, Permissions, Tenancy}
+  alias DueDesk.{Billing, Documents, DueItems, Notifications, Permissions, Tenancy}
+  alias DueDesk.Notifications.Delivery
   alias DueDesk.Documents.Document
   alias DueDesk.DueItems.{Cycle, DueItem, Recurrence, ReminderRule, Status}
 
@@ -660,7 +661,46 @@ defmodule DueDeskWeb.DueItemLive.Show do
                   <% end %>
                 </dd>
               </div>
+              <div :if={@live?}>
+                <dt class="text-xs text-muted">Next reminder</dt>
+                <dd id="next-reminder" class="text-ink">
+                  <%= case @next_reminder do %>
+                    <% {date, label} -> %>
+                      {date(date)} <span class="text-zinc-500">({label})</span>
+                    <% nil -> %>
+                      <span class="text-zinc-500">None scheduled</span>
+                  <% end %>
+                </dd>
+              </div>
             </dl>
+          </.card>
+
+          <.card :if={@control?} id="reminder-log-card" title="Reminder log">
+            <:subtitle>The latest reminders and notices about this DueItem.</:subtitle>
+            <ul id="reminder-log" class="divide-y divide-line text-sm">
+              <li :if={@deliveries == []} class="py-1 text-zinc-500">Nothing sent yet.</li>
+              <li
+                :for={delivery <- @deliveries}
+                id={"delivery-#{delivery.id}"}
+                class="flex items-start justify-between gap-3 py-2 first:pt-0 last:pb-0"
+              >
+                <div class="min-w-0">
+                  <p class="truncate text-ink">{delivery.user.name}</p>
+                  <p class="text-xs text-muted">
+                    {Delivery.kind_label(delivery.kind)} · {Delivery.channel_label(delivery.channel)} · {datetime(
+                      delivery.sent_at || delivery.inserted_at,
+                      @tz
+                    )}
+                  </p>
+                </div>
+                <span class={[
+                  "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                  delivery_tone(delivery.status)
+                ]}>
+                  {Delivery.status_label(delivery.status)}
+                </span>
+              </li>
+            </ul>
           </.card>
         </div>
       </div>
@@ -1020,8 +1060,15 @@ defmodule DueDeskWeb.DueItemLive.Show do
     |> assign(:primary, DueItem.primary_user(item))
     |> assign(:additional, DueItem.additional_users(item))
     |> assign(:reminders, for(%{active: true, offset_days: d} <- item.reminder_rules, do: d))
+    |> assign(:next_reminder, Notifications.next_reminder(item, today))
+    |> assign(:deliveries, Notifications.list_deliveries(scope, item))
     |> stream(:history, DueItems.history(scope, item), reset: true)
   end
+
+  defp delivery_tone("sent"), do: "bg-emerald-50 text-emerald-700 ring-emerald-200/70"
+  defp delivery_tone("failed"), do: "bg-red-50 text-red-700 ring-red-200/70"
+  defp delivery_tone("pending"), do: "bg-sky-50 text-sky-700 ring-sky-200/70"
+  defp delivery_tone("skipped"), do: "bg-zinc-100 text-zinc-600 ring-zinc-200/70"
 
   defp assign_assignment(socket, changeset) do
     primary = Ecto.Changeset.get_field(changeset, :primary_user_id)

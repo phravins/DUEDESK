@@ -3,7 +3,7 @@ defmodule DueDeskWeb.UserLive.Settings do
 
   on_mount {DueDeskWeb.UserAuth, :require_sudo_mode}
 
-  alias DueDesk.Accounts
+  alias DueDesk.{Accounts, Notifications, Tenancy}
 
   @impl true
   def render(assigns) do
@@ -89,6 +89,47 @@ defmodule DueDeskWeb.UserLive.Settings do
             <.button class="mt-2" phx-disable-with="Saving...">Save password</.button>
           </.form>
         </.card>
+
+        <.card :if={@notification_form} id="notifications" title="Notifications">
+          <:subtitle>How DueDesk reminds you about your DueItems.</:subtitle>
+          <.form
+            for={@notification_form}
+            id="notification-form"
+            phx-change="validate_notifications"
+            phx-submit="save_notifications"
+          >
+            <.input
+              field={@notification_form[:notify_email]}
+              type="checkbox"
+              label="Email reminders"
+            />
+            <.input
+              field={@notification_form[:notify_whatsapp]}
+              type="checkbox"
+              label="WhatsApp reminders"
+            />
+            <.input
+              field={@notification_form[:whatsapp_consent]}
+              type="checkbox"
+              label={"I agree to receive DueDesk reminders on WhatsApp at #{mobile(@current_scope.user.mobile_number)}"}
+            />
+            <p
+              :if={not @whatsapp_available?}
+              id="whatsapp-unavailable"
+              class="mb-3 flex items-center gap-1.5 text-xs text-muted"
+            >
+              <.icon name="hero-information-circle" class="size-4" /> WhatsApp delivery unavailable
+            </p>
+            <p
+              :if={@whatsapp_available? and @whatsapp_enabled?}
+              id="whatsapp-enabled"
+              class="mb-3 flex items-center gap-1.5 text-xs text-emerald-700"
+            >
+              <.icon name="hero-check-circle" class="size-4" /> WhatsApp reminder enabled
+            </p>
+            <.button class="mt-2" phx-disable-with="Saving...">Save notifications</.button>
+          </.form>
+        </.card>
       </div>
     </Layouts.app>
     """
@@ -121,9 +162,26 @@ defmodule DueDeskWeb.UserLive.Settings do
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
       |> assign(:trigger_submit, false)
+      |> assign(:whatsapp_available?, Notifications.whatsapp_available?())
+      |> assign_notifications(socket.assigns.current_scope)
 
     {:ok, socket}
   end
+
+  defp assign_notifications(socket, %{membership: %Tenancy.Membership{} = membership} = scope) do
+    socket
+    |> assign(
+      :notification_form,
+      to_form(Tenancy.change_notification_preferences(scope), as: :notifications)
+    )
+    |> assign(
+      :whatsapp_enabled?,
+      membership.notify_whatsapp and not is_nil(membership.whatsapp_consent_at)
+    )
+  end
+
+  defp assign_notifications(socket, _scope),
+    do: socket |> assign(:notification_form, nil) |> assign(:whatsapp_enabled?, false)
 
   @impl true
   def handle_event("update_profile", %{"user" => user_params}, socket) do
@@ -142,6 +200,38 @@ defmodule DueDeskWeb.UserLive.Settings do
 
       {:error, changeset} ->
         {:noreply, assign(socket, :profile_form, to_form(changeset, action: :update))}
+    end
+  end
+
+  def handle_event("validate_notifications", %{"notifications" => params}, socket) do
+    form =
+      socket.assigns.current_scope
+      |> Tenancy.change_notification_preferences(params)
+      |> to_form(as: :notifications, action: :validate)
+
+    {:noreply, assign(socket, :notification_form, form)}
+  end
+
+  def handle_event("save_notifications", %{"notifications" => params}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Tenancy.update_notification_preferences(scope, params) do
+      {:ok, membership} ->
+        scope = %{scope | membership: membership}
+
+        {:noreply,
+         socket
+         |> assign(:current_scope, scope)
+         |> assign_notifications(scope)
+         |> put_flash(:info, "Notification settings saved.")}
+
+      {:error, changeset} ->
+        {:noreply,
+         assign(
+           socket,
+           :notification_form,
+           to_form(changeset, as: :notifications, action: :update)
+         )}
     end
   end
 
