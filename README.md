@@ -11,18 +11,19 @@ Phoenix 1.8 · LiveView · PostgreSQL · Tailwind CSS.
 Requirements: Elixir 1.18 / OTP 27 and a local PostgreSQL server.
 
 Dev and test connect to Postgres on `localhost:5432` and use the databases
-`duedesk_dev` and `duedesk_test`. Set these if your server differs:
+`duedesk_dev` and `duedesk_test`. Credentials live in a gitignored `.env`
+file, never in `config/`:
 
-| Variable | Default |
-|---|---|
-| `DB_HOST` | `localhost` |
-| `DB_PORT` | `5432` |
-| `DB_USERNAME` | `postgres` |
-| `DB_PASSWORD` | `postgres` |
+```sh
+cp .env.example .env        # then set DB_USERNAME / DB_PASSWORD
+```
 
-The role needs `CREATEDB` so `mix setup` can create the databases, e.g.
-`sudo -u postgres createuser --createdb --pwprompt duedesk`, then
-`export DB_USERNAME=duedesk DB_PASSWORD=...` in your shell profile.
+`config/config.exs` loads `.env` in dev and test (shell variables win).
+Without it the defaults are `localhost:5432`, `postgres`/`postgres`.
+
+The role needs `CREATEDB` so `mix setup` can create the databases:
+`sudo -u postgres psql`, then `CREATE ROLE duedesk LOGIN CREATEDB;` and
+`\password duedesk`.
 
 ```sh
 mix setup                   # deps, database, seeds, assets

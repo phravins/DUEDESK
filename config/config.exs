@@ -1,5 +1,22 @@
 import Config
 
+# Local credentials live in `.env` (gitignored, see `.env.example`). In dev
+# and test its KEY=value lines are loaded into the environment; variables
+# already set in the shell win. Production reads the real environment only.
+dotenv = Path.expand("../.env", __DIR__)
+
+if config_env() in [:dev, :test] and File.regular?(dotenv) do
+  for line <- File.stream!(dotenv),
+      line = String.trim(line),
+      line != "" and not String.starts_with?(line, "#"),
+      [key, value] <- [String.split(String.replace_prefix(line, "export ", ""), "=", parts: 2)],
+      key = String.trim(key),
+      value = value |> String.trim() |> String.trim("\"") |> String.trim("'"),
+      value != "" and System.get_env(key) == nil do
+    System.put_env(key, value)
+  end
+end
+
 config :duedesk, :scopes,
   user: [
     default: true,
