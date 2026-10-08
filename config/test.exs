@@ -18,6 +18,17 @@ config :duedesk, DueDeskWeb.Endpoint,
 
 config :duedesk, DueDesk.Mailer, adapter: Swoosh.Adapters.Test
 
+config :duedesk, DueDesk.Documents.Storage,
+  adapter: DueDesk.Documents.Storage.Local,
+  root:
+    Path.join(
+      System.tmp_dir!(),
+      "duedesk_test_uploads#{System.get_env("MIX_TEST_PARTITION")}"
+    )
+
+# Small enough that "too large" can be tested without a 30 MB fixture.
+config :duedesk, :document_max_file_size, 100_000
+
 config :swoosh, :api_client, false
 
 config :logger, level: :warning

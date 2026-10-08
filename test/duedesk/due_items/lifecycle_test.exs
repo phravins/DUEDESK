@@ -4,8 +4,10 @@ defmodule DueDesk.DueItems.LifecycleTest do
   import Ecto.Query
   import DueDesk.TenancyFixtures
   import DueDesk.DueItemsFixtures
+  import DueDesk.DocumentsFixtures
 
-  alias DueDesk.{Billing, DueItems, Repo, Tenancy}
+  alias DueDesk.{Billing, Documents, DueItems, Repo, Tenancy}
+  alias DueDesk.Documents.Document
   alias DueDesk.Audit.AuditEvent
   alias DueDesk.DueItems.{Cycle, DueItem, ReminderRule}
 
@@ -439,8 +441,142 @@ defmodule DueDesk.DueItems.LifecycleTest do
       assert offsets(item) == []
 
       deleted = event(item, "due_item.deleted")
-      assert deleted.metadata == %{"title" => "Fire NOC"}
+      assert deleted.metadata == %{"title" => "Fire NOC", "documents" => 0}
       assert {:error, :not_found} = DueItems.delete_due_item(ctx.owner, archived, "Fire NOC")
+    end
+  end
+
+  describe "documents through the lifecycle" do
+    defp documents(item),
+      do: Repo.all(from d in Document, where: d.due_item_id == ^item.id, order_by: d.filename)
+
+    test "a renewal's documents go on the new cycle as current", ctx do
+      item = monthly_item(ctx)
+      upload = upload_fixture(ctx.user_a, "GSTR-3B-ack.pdf")
+
+      assert {:ok, _} = DueItems.renew_due_item(ctx.user_a, item, %{}, [upload])
+
+      renewed = reload(ctx.admin, item)
+      assert [doc] = documents(item)
+      assert doc.cycle_id == renewed.current_cycle_id
+      assert doc.cycle_id != item.current_cycle_id
+      assert doc.role == "current"
+      assert storage_used(ctx.owner) == upload.byte_size
+      assert "document.uploaded" in actions(item)
+    end
+
+    test "with the next dates left for an Administrator, they go on the closed cycle", ctx do
+      item =
+        monthly_item(ctx, %{recurrence: "custom", recurrence_unit: "explicit", expiry_date: nil})
+
+      upload = upload_fixture(ctx.user_a)
+      assert {:ok, _} = DueItems.renew_due_item(ctx.user_a, item, %{}, [upload])
+
+      assert [%Document{role: "completion", cycle_id: cycle_id}] = documents(item)
+      assert cycle_id == item.current_cycle_id
+    end
+
+    test "completing puts them on the closed cycle as completion documents", ctx do
+      item = due_item_fixture(ctx.admin, primary_user_id: ctx.user_a.user.id)
+      upload = upload_fixture(ctx.user_a, "signed-contract.pdf")
+
+      assert {:ok, _} = DueItems.complete_due_item(ctx.user_a, item, %{}, [upload])
+
+      assert [%Document{role: "completion", cycle_id: cycle_id}] = documents(item)
+      assert cycle_id == item.current_cycle_id
+      assert reload(ctx.admin, item).disposition_state == "awaiting_admin_disposition"
+    end
+
+    test "a failed renewal or completion leaves no rows and removes the files", ctx do
+      item =
+        monthly_item(ctx, %{recurrence: "custom", recurrence_unit: "explicit", expiry_date: nil})
+
+      upload = upload_fixture(ctx.user_a)
+
+      assert {:error, %Ecto.Changeset{}} =
+               DueItems.renew_due_item(
+                 ctx.user_a,
+                 item,
+                 %{"next_due_date" => "2027-01-01"},
+                 [upload]
+               )
+
+      refute stored?(upload.storage_key)
+
+      {:ok, _} = DueItems.renew_due_item(ctx.user_a, monthly_item(ctx), %{})
+      stale = monthly_item(ctx)
+      {:ok, _} = DueItems.renew_due_item(ctx.admin, stale, %{})
+      upload = upload_fixture(ctx.user_a)
+      assert {:error, :stale} = DueItems.renew_due_item(ctx.user_a, stale, %{}, [upload])
+      refute stored?(upload.storage_key)
+
+      one_off = due_item_fixture(ctx.admin, primary_user_id: ctx.user_a.user.id)
+      upload = upload_fixture(ctx.user_b)
+
+      assert {:error, :unauthorized} =
+               DueItems.complete_due_item(ctx.user_b, one_off, %{}, [upload])
+
+      refute stored?(upload.storage_key)
+      assert Repo.aggregate(Document, :count) == 0
+      assert storage_used(ctx.owner) == 0
+    end
+
+    test "a renewal that does not fit in storage does not happen", ctx do
+      item = monthly_item(ctx)
+      upload = upload_fixture(ctx.user_a)
+      put_storage_used(ctx.owner, Billing.plan(ctx.owner).storage_bytes)
+
+      assert {:error, {:limit_reached, %{resource: :storage}}} =
+               DueItems.renew_due_item(ctx.user_a, item, %{}, [upload])
+
+      assert reload(ctx.admin, item).current_cycle_id == item.current_cycle_id
+      refute stored?(upload.storage_key)
+
+      # Without files the renewal still goes through.
+      assert {:ok, _} = DueItems.renew_due_item(ctx.user_a, item, %{})
+    end
+
+    test "renewing twice keeps each cycle's documents", ctx do
+      item = monthly_item(ctx)
+      first = document_fixture(ctx.user_a, item, filename: "jan.pdf")
+
+      {:ok, _} =
+        DueItems.renew_due_item(ctx.user_a, item, %{}, [upload_fixture(ctx.user_a, "feb.pdf")])
+
+      second = reload(ctx.admin, item)
+
+      {:ok, _} =
+        DueItems.renew_due_item(ctx.user_a, second, %{}, [upload_fixture(ctx.user_a, "mar.pdf")])
+
+      third = reload(ctx.admin, item)
+
+      assert [feb, jan, mar] = documents(item)
+      assert jan.id == first.id and jan.cycle_id == item.current_cycle_id
+      assert feb.cycle_id == second.current_cycle_id
+      assert mar.cycle_id == third.current_cycle_id
+      assert Enum.all?([jan, feb, mar], &stored?(&1.storage_key))
+      assert length(Documents.list_documents(ctx.admin, item)) == 3
+    end
+
+    test "deleting a DueItem removes its files and frees their storage", ctx do
+      item = monthly_item(ctx, %{title: "Fire NOC"})
+      a = document_fixture(ctx.user_a, item, contents: "1234")
+      b = document_fixture(ctx.admin, item, role: "supporting", contents: "123456")
+      other = document_fixture(ctx.admin, monthly_item(ctx), contents: "12")
+      assert storage_used(ctx.owner) == 12
+
+      {:ok, archived} = DueItems.archive_due_item(ctx.admin, reload(ctx.admin, item))
+      assert {:ok, _} = DueItems.delete_due_item(ctx.owner, archived, "Fire NOC")
+
+      refute stored?(a.storage_key)
+      refute stored?(b.storage_key)
+      assert stored?(other.storage_key)
+      assert storage_used(ctx.owner) == 2
+
+      assert event(item, "due_item.deleted").metadata == %{
+               "title" => "Fire NOC",
+               "documents" => 2
+             }
     end
   end
 end

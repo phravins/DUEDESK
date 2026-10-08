@@ -5,12 +5,18 @@ defmodule DueDeskWeb.DueItemLive.Renew do
   at each renewal, the dates are entered here, or left for an
   Administrator.
 
+  Documents added here are the new cycle's current documents (the
+  renewed licence, the filing acknowledgement), or, when the next dates
+  are left for an Administrator, proof on the closed cycle.
+
   Anyone who can see the DueItem may renew it while it is active; the
   context checks the same.
   """
   use DueDeskWeb, :live_view
 
-  alias DueDesk.{DueItems, Permissions}
+  import DueDeskWeb.DocumentComponents
+
+  alias DueDesk.{Billing, Documents, DueItems, Permissions}
   alias DueDesk.DueItems.{DueItem, Recurrence}
 
   @not_available "This DueItem is not available to your account access."
@@ -29,6 +35,14 @@ defmodule DueDeskWeb.DueItemLive.Renew do
           <div class="space-y-4">
             <.card id="current-cycle" title="This cycle">
               <.cycle_dates cycle={@item.current_cycle} />
+              <div :if={@cycle_documents != []} class="mt-4">
+                <p class="mb-1 text-xs text-muted">Documents</p>
+                <.document_list
+                  id="current-cycle-documents"
+                  documents={@cycle_documents}
+                  tz={@current_scope.customer_account.timezone}
+                />
+              </div>
             </.card>
 
             <.card id="next-cycle" title="Next cycle">
@@ -69,10 +83,16 @@ defmodule DueDeskWeb.DueItemLive.Renew do
               />
             </.card>
 
-            <div class="flex items-start gap-2.5 rounded-lg border border-dashed border-zinc-300 px-4 py-3 text-sm text-zinc-500">
-              <.icon name="hero-paper-clip" class="mt-px size-5 shrink-0 text-zinc-400" />
-              <span>Attaching documents to a renewal arrives in an upcoming release.</span>
-            </div>
+            <.card id="renewal-documents" title="Documents">
+              <:subtitle>
+                New document: the renewed licence, filing acknowledgement or receipt. Optional.
+              </:subtitle>
+              <.document_dropzone
+                upload={@uploads.documents}
+                storage={@storage}
+                error={@upload_error}
+              />
+            </.card>
 
             <div class="flex flex-wrap items-center gap-2 pt-1">
               <.button id="save-renewal" phx-disable-with="Recording…">
@@ -129,6 +149,9 @@ defmodule DueDeskWeb.DueItemLive.Renew do
          |> assign(:item, item)
          |> assign(:explicit?, Recurrence.interval(item) == :explicit)
          |> assign(:next, next_dates(scope, item))
+         |> assign(:cycle_documents, cycle_documents(scope, item))
+         |> assign(:upload_error, nil)
+         |> allow_documents()
          |> assign(:form, to_form(DueItems.change_completion(scope, item)))}
       else
         {:ok, push_navigate(socket, to: ~p"/due-items/#{item}/complete")}
@@ -142,13 +165,30 @@ defmodule DueDeskWeb.DueItemLive.Renew do
   def handle_event("validate", %{"completion" => params}, socket) do
     %{current_scope: scope, item: item} = socket.assigns
     changeset = DueItems.change_completion(scope, item, params)
-    {:noreply, assign(socket, :form, to_form(changeset, action: :validate))}
+    socket = assign(socket, :form, to_form(changeset, action: :validate))
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
+  end
+
+  def handle_event("validate", _params, socket) do
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
+  end
+
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    socket = cancel_document(socket, ref)
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
   end
 
   def handle_event("save", %{"completion" => params}, socket) do
+    case prepare_documents(socket, params) do
+      {:ok, uploads} -> renew(socket, params, uploads)
+      {:error, socket} -> {:noreply, socket}
+    end
+  end
+
+  defp renew(socket, params, uploads) do
     %{current_scope: scope, item: item} = socket.assigns
 
-    case DueItems.renew_due_item(scope, item, params) do
+    case DueItems.renew_due_item(scope, item, params, uploads) do
       {:ok, %DueItem{disposition_state: "awaiting_new_dates"} = renewed} ->
         if Permissions.can_manage_due_items?(scope) do
           {:noreply,
@@ -171,6 +211,12 @@ defmodule DueDeskWeb.DueItemLive.Renew do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :form, to_form(changeset, action: :validate))}
 
+      {:error, {:limit_reached, info}} ->
+        {:noreply,
+         socket
+         |> refresh_storage()
+         |> assign(:upload_error, Billing.limit_message(scope, info))}
+
       {:error, :stale} ->
         {:noreply,
          socket
@@ -180,6 +226,34 @@ defmodule DueDeskWeb.DueItemLive.Renew do
       {:error, _} ->
         {:noreply, not_available(socket)}
     end
+  end
+
+  # Validates the form first, so a mistake there keeps the selected files;
+  # then checks and stores the files. Returns `{:ok, uploads}` or the
+  # socket to render.
+  defp prepare_documents(socket, params) do
+    %{current_scope: scope, item: item} = socket.assigns
+    changeset = DueItems.change_completion(scope, item, params)
+
+    cond do
+      not changeset.valid? ->
+        {:error, assign(socket, :form, to_form(changeset, action: :validate))}
+
+      message = selection_error(socket) ->
+        {:error, assign(socket, :upload_error, message)}
+
+      true ->
+        case consume_documents(socket) do
+          {:ok, uploads} -> {:ok, uploads}
+          {:error, message} -> {:error, assign(socket, :upload_error, message)}
+        end
+    end
+  end
+
+  defp cycle_documents(scope, item) do
+    scope
+    |> Documents.list_documents(item)
+    |> Enum.filter(&(&1.cycle_id == item.current_cycle_id))
   end
 
   defp next_dates(scope, item) do

@@ -1,10 +1,11 @@
 defmodule DueDeskWeb.DueItemLive.Show do
   @moduledoc """
   A DueItem's detail page (UX spec §35): dates, status, who is
-  responsible, recurrence and reminders, notes and readable history.
+  responsible, recurrence and reminders, documents, notes and readable
+  history.
 
-  Anyone who can see an active DueItem can renew or complete it and add
-  notes. Administrators and Super Admins edit, assign, override the
+  Anyone who can see an active DueItem can renew or complete it, upload
+  documents and add notes. Administrators and Super Admins edit, assign, override the
   status, archive, decide what happens to completed DueItems, restore
   archived ones and review Users' renewals here; a Super Admin can
   permanently delete an archived DueItem.
@@ -14,11 +15,14 @@ defmodule DueDeskWeb.DueItemLive.Show do
   use DueDeskWeb, :live_view
 
   import DueDeskWeb.DueItemComponents
+  import DueDeskWeb.DocumentComponents
 
-  alias DueDesk.{DueItems, Permissions, Tenancy}
+  alias DueDesk.{Billing, Documents, DueItems, Permissions, Tenancy}
+  alias DueDesk.Documents.Document
   alias DueDesk.DueItems.{Cycle, DueItem, Recurrence, ReminderRule, Status}
 
   @not_available "This DueItem is not available to your account access."
+  @stale "This DueItem has already been updated. Refresh to see the latest."
 
   @impl true
   def render(assigns) do
@@ -92,9 +96,17 @@ defmodule DueDeskWeb.DueItemLive.Show do
         class="mb-4 flex flex-col gap-3 rounded-lg border border-violet-200/70 bg-violet-50/60 px-4 py-3 text-sm sm:flex-row sm:items-center"
       >
         <.icon name="hero-inbox-arrow-down" class="hidden size-5 shrink-0 text-violet-500 sm:block" />
-        <p class="min-w-0 flex-1 text-violet-900">
-          {awaiting_message(@awaiting, List.first(@cycles))}
-        </p>
+        <div class="min-w-0 flex-1 text-violet-900">
+          <p>{awaiting_message(@awaiting, List.first(@cycles))}</p>
+          <.document_list
+            :if={cycle_documents(@documents_by_cycle, List.first(@cycles)) != []}
+            id="awaiting-documents"
+            documents={cycle_documents(@documents_by_cycle, List.first(@cycles))}
+            tz={@tz}
+            dom_prefix="awaiting-"
+            compact
+          />
+        </div>
         <div class="flex shrink-0 flex-wrap gap-2">
           <.button
             id="archive-awaiting"
@@ -157,8 +169,10 @@ defmodule DueDeskWeb.DueItemLive.Show do
       >
         <p class="text-sm font-medium text-rose-900">Permanently delete this DueItem?</p>
         <p class="mt-1 mb-3 text-sm text-rose-800">
-          Its cycles, notes, responsibility and reminders are deleted and cannot be recovered.
-          Type <span class="font-semibold">{@item.title}</span> to confirm.
+          Its cycles, documents, notes, responsibility and reminders are deleted and cannot be
+          recovered. The documents' storage is freed. Type
+          <span class="font-semibold">{@item.title}</span>
+          to confirm.
         </p>
         <div class="max-w-md">
           <.input field={@delete_form[:title]} aria-label="DueItem title" autocomplete="off" />
@@ -281,6 +295,134 @@ defmodule DueDeskWeb.DueItemLive.Show do
             </dl>
           </.card>
 
+          <.card id="due-item-documents" title="Documents">
+            <:subtitle>
+              {if @open_cycle?, do: "For the current cycle.", else: "No cycle is open."}
+            </:subtitle>
+            <:action :if={@can_upload? and @panel != :upload}>
+              <.button
+                id="upload-documents"
+                size="sm"
+                variant="outline"
+                phx-click="open_panel"
+                phx-value-panel="upload"
+              >
+                <.icon name="hero-arrow-up-tray" class="size-4" /> Upload
+              </.button>
+            </:action>
+
+            <%= if @panel == :upload do %>
+              <%= if @storage.left == 0 do %>
+                <div
+                  id="storage-full"
+                  class="mb-5 rounded-md border border-amber-200/70 bg-amber-50/60 px-3.5 py-3 text-sm text-amber-900"
+                >
+                  <p>{storage_full_message(@current_scope, @storage)}</p>
+                  <div class="mt-2 flex gap-3">
+                    <.link
+                      :if={Permissions.can_manage_billing?(@current_scope)}
+                      navigate={~p"/account/plans"}
+                      class="text-xs font-medium text-amber-900 underline underline-offset-2"
+                    >
+                      View Plans
+                    </.link>
+                    <button
+                      type="button"
+                      phx-click="close_panel"
+                      class="text-xs font-medium text-amber-900/80 hover:text-amber-900"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              <% else %>
+                <.form
+                  for={@upload_form}
+                  id="upload-form"
+                  phx-change="validate_upload"
+                  phx-submit="upload"
+                  class="mb-5 rounded-md border border-line p-4"
+                >
+                  <fieldset class="mb-4">
+                    <legend class="mb-2 text-[13px] font-medium text-zinc-600">Add as</legend>
+                    <div class="grid gap-2 sm:grid-cols-2">
+                      <label
+                        :for={
+                          {value, label, hint} <- [
+                            {"current", "Current document",
+                             "The licence, certificate or filing for this cycle."},
+                            {"supporting", "Supporting document",
+                             "Receipts, letters and anything else that belongs with it."}
+                          ]
+                        }
+                        class="flex cursor-pointer items-start gap-2.5 rounded-md border border-line px-3 py-2.5 transition hover:bg-zinc-50 has-checked:border-navy/40 has-checked:bg-sky-50/40"
+                      >
+                        <input
+                          type="radio"
+                          id={"upload-role-#{value}"}
+                          name="upload[role]"
+                          value={value}
+                          checked={@upload_form[:role].value == value}
+                          class="mt-0.5 size-4 accent-navy"
+                        />
+                        <span>
+                          <span class="block text-sm font-medium text-ink">{label}</span>
+                          <span class="block text-xs text-muted">{hint}</span>
+                        </span>
+                      </label>
+                    </div>
+                  </fieldset>
+                  <.document_dropzone
+                    upload={@uploads.documents}
+                    storage={@storage}
+                    error={@upload_error}
+                  />
+                  <div class="mt-4 flex gap-2">
+                    <.button
+                      id="save-upload"
+                      size="sm"
+                      disabled={not uploadable?(@uploads.documents) or not is_nil(@upload_error)}
+                      phx-disable-with="Uploading…"
+                    >
+                      Upload
+                    </.button>
+                    <.button type="button" size="sm" variant="ghost" phx-click="close_panel">
+                      Cancel
+                    </.button>
+                  </div>
+                </.form>
+              <% end %>
+            <% end %>
+
+            <div class="space-y-5">
+              <div>
+                <p class="mb-1 text-xs font-medium tracking-wide text-muted uppercase">Current</p>
+                <.document_list
+                  id="documents-current"
+                  documents={@current_documents}
+                  removable={@removable}
+                  tz={@tz}
+                  empty="No current document yet."
+                />
+              </div>
+              <div>
+                <p class="mb-1 text-xs font-medium tracking-wide text-muted uppercase">
+                  Supporting
+                </p>
+                <.document_list
+                  id="documents-supporting"
+                  documents={@supporting_documents}
+                  removable={@removable}
+                  tz={@tz}
+                  empty="No supporting documents."
+                />
+              </div>
+              <p :if={@cycles != []} class="text-xs text-muted">
+                Documents from earlier cycles are kept under Previous cycles.
+              </p>
+            </div>
+          </.card>
+
           <.card id="due-item-notes" title="Notes">
             <:subtitle>Visible to everyone who can see this DueItem.</:subtitle>
             <ul id="notes" phx-update="stream" class="space-y-4">
@@ -357,6 +499,15 @@ defmodule DueDeskWeb.DueItemLive.Show do
                     <dd class="mt-0.5 whitespace-pre-line text-zinc-700">{cycle.completion_note}</dd>
                   </div>
                 </dl>
+                <div :if={cycle_documents(@documents_by_cycle, cycle) != []} class="mt-2 ml-7">
+                  <p class="text-xs text-muted">Documents</p>
+                  <.document_list
+                    id={"cycle-documents-#{cycle.id}"}
+                    documents={cycle_documents(@documents_by_cycle, cycle)}
+                    removable={@removable}
+                    tz={@tz}
+                  />
+                </div>
               </details>
             </div>
           </.card>
@@ -511,13 +662,6 @@ defmodule DueDeskWeb.DueItemLive.Show do
               </div>
             </dl>
           </.card>
-
-          <div class="rounded-lg border border-dashed border-zinc-300 px-4 py-3 text-sm text-zinc-500">
-            <p class="flex items-center gap-2">
-              <.icon name="hero-paper-clip" class="size-4 text-zinc-400" /> Documents
-            </p>
-            <p class="mt-1 text-xs">Uploading documents arrives in an upcoming release.</p>
-          </div>
         </div>
       </div>
     </Layouts.app>
@@ -538,6 +682,9 @@ defmodule DueDeskWeb.DueItemLive.Show do
          |> assign(:delete?, Permissions.can_delete_due_item?(scope))
          |> assign(:panel, nil)
          |> assign(:note_form, to_form(DueItems.change_note()))
+         |> assign(:upload_form, upload_form("current"))
+         |> assign(:upload_error, nil)
+         |> allow_documents()
          |> assign_item(item)
          |> stream(:notes, DueItems.list_notes(scope, item))}
 
@@ -586,8 +733,86 @@ defmodule DueDeskWeb.DueItemLive.Show do
     end
   end
 
+  def handle_event("open_panel", %{"panel" => "upload"}, socket) do
+    if socket.assigns.can_upload? do
+      {:noreply,
+       socket
+       |> assign(:panel, :upload)
+       |> assign(:upload_form, upload_form("current"))
+       |> assign(:upload_error, nil)
+       |> refresh_storage()}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_event("close_panel", _params, socket) do
-    {:noreply, assign(socket, :panel, nil)}
+    {:noreply, socket |> clear_selection() |> assign(:panel, nil)}
+  end
+
+  def handle_event("validate_upload", params, socket) do
+    role = get_in(params, ["upload", "role"]) || socket.assigns.upload_form[:role].value
+
+    {:noreply,
+     socket
+     |> assign(:upload_form, upload_form(role))
+     |> then(&assign(&1, :upload_error, selection_error(&1)))}
+  end
+
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    socket = cancel_document(socket, ref)
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
+  end
+
+  def handle_event("upload", params, socket) do
+    %{current_scope: scope, item: item} = socket.assigns
+    role = get_in(params, ["upload", "role"]) || "current"
+
+    with true <- documents_selected?(socket) || {:error, "Choose at least one file."},
+         nil <- selection_error(socket),
+         {:ok, uploads} <- consume_documents(socket) do
+      case Documents.attach_documents(scope, item, role, uploads) do
+        {:ok, documents} ->
+          {:noreply,
+           socket
+           |> assign(:panel, nil)
+           |> put_flash(:info, uploaded_message(documents))
+           |> refresh_storage()
+           |> reload()}
+
+        {:error, {:limit_reached, info}} ->
+          {:noreply,
+           socket
+           |> refresh_storage()
+           |> assign(:upload_error, Billing.limit_message(scope, info))}
+
+        {:error, :stale} ->
+          {:noreply, socket |> assign(:panel, nil) |> put_flash(:error, @stale) |> reload()}
+
+        {:error, _} ->
+          {:noreply, not_available(socket)}
+      end
+    else
+      {:error, message} -> {:noreply, assign(socket, :upload_error, message)}
+      message when is_binary(message) -> {:noreply, assign(socket, :upload_error, message)}
+    end
+  end
+
+  def handle_event("remove_document", %{"id" => id}, socket) do
+    case Documents.delete_document(socket.assigns.current_scope, %Document{id: id}) do
+      {:ok, document} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Removed “#{document.filename}”.")
+         |> refresh_storage()
+         |> reload()}
+
+      {:error, _} ->
+        {:noreply,
+         socket
+         |> put_flash(:error, "This document can no longer be removed.")
+         |> reload()}
+    end
   end
 
   def handle_event("validate_assign", %{"assignment" => params}, socket) do
@@ -755,6 +980,9 @@ defmodule DueDeskWeb.DueItemLive.Show do
     status = Status.effective(item, cycle, today, days)
 
     cycles = DueItems.list_cycles(scope, item)
+    documents = Documents.list_documents(scope, item)
+    open_cycle_id = if cycle && not Cycle.closed?(cycle), do: cycle.id
+    open_documents = Enum.filter(documents, &(&1.cycle_id == open_cycle_id))
 
     socket
     |> assign(:page_title, item.title)
@@ -765,6 +993,20 @@ defmodule DueDeskWeb.DueItemLive.Show do
     |> assign(:awaiting, disposition_status(item))
     |> assign(:live?, item.status == "active" and is_nil(item.disposition_state))
     |> assign(:cycles, cycles)
+    |> assign(:can_upload?, Permissions.can_upload_document?(scope, item))
+    |> assign(:open_cycle?, not is_nil(open_cycle_id))
+    |> assign(:current_documents, Enum.filter(open_documents, &(&1.role == "current")))
+    |> assign(:supporting_documents, Enum.reject(open_documents, &(&1.role == "current")))
+    |> assign(:documents_by_cycle, Enum.group_by(documents, & &1.cycle_id))
+    |> assign(
+      :removable,
+      for(
+        doc <- documents,
+        Permissions.can_delete_document?(scope, item, doc),
+        into: MapSet.new(),
+        do: doc.id
+      )
+    )
     |> assign(
       :pending_review,
       Enum.find(cycles, &(&1.completion_type == "renewed" and is_nil(&1.reviewed_at)))
@@ -791,6 +1033,26 @@ defmodule DueDeskWeb.DueItemLive.Show do
       :assign_additional_ids,
       List.wrap(Ecto.Changeset.get_field(changeset, :additional_user_ids))
     )
+  end
+
+  defp upload_form(role), do: to_form(%{"role" => role}, as: :upload)
+
+  defp clear_selection(socket) do
+    socket.assigns.uploads.documents.entries
+    |> Enum.reduce(socket, &cancel_document(&2, &1.ref))
+    |> assign(:upload_error, nil)
+  end
+
+  defp cycle_documents(_by_cycle, nil), do: []
+  defp cycle_documents(by_cycle, %Cycle{id: id}), do: Map.get(by_cycle, id, [])
+
+  defp storage_full_message(scope, storage) do
+    Billing.limit_message(scope, %{
+      plan: Billing.plan(scope),
+      limit: storage.limit,
+      resource: :storage,
+      used: storage.used
+    })
   end
 
   defp not_available(socket) do

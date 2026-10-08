@@ -87,6 +87,14 @@ defmodule DueDeskWeb.Router do
     post "/users/update-password", UserSessionController, :update_password
   end
 
+  # Document downloads: a controller, so the account and role come from the
+  # `:require_account` plug rather than the live_session on_mount.
+  scope "/", DueDeskWeb do
+    pipe_through [:browser, :require_authenticated_user, :require_account]
+
+    get "/documents/:id/download", DocumentController, :download
+  end
+
   ## Authentication (public)
 
   scope "/", DueDeskWeb do

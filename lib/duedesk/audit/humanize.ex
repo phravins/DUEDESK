@@ -103,6 +103,18 @@ defmodule DueDesk.Audit.Humanize do
 
   defp sentence("note.added", _changes, _meta, _names), do: {"added a note", []}
 
+  defp sentence("document.uploaded", _changes, meta, _names) do
+    size =
+      if is_integer(meta["byte_size"]),
+        do: " (#{DueDesk.Billing.Plans.format_bytes(meta["byte_size"])})",
+        else: ""
+
+    {"uploaded \u201c#{meta["filename"]}\u201d#{size}", []}
+  end
+
+  defp sentence("document.deleted", _changes, meta, _names),
+    do: {"removed \u201c#{meta["filename"]}\u201d", []}
+
   defp sentence("due_item.updated", changes, _meta, _names) do
     phrases =
       for field <- @field_order, Map.has_key?(changes, field) do

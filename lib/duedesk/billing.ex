@@ -16,7 +16,7 @@ defmodule DueDesk.Billing do
   alias DueDesk.Organisations.Organisation
   alias DueDesk.Tenancy.Membership
 
-  @type resource :: :organisation | :member | :due_item
+  @type resource :: :organisation | :member | :due_item | :storage
   @type limit_info :: %{plan: map(), limit: non_neg_integer(), resource: resource()}
 
   @doc "The plan of the scope's account."
@@ -71,6 +71,46 @@ defmodule DueDesk.Billing do
     end
   end
 
+  @doc """
+  Checks whether `adding` more bytes fit in the plan's storage, given
+  `used` bytes read from the locked account row. Reaching the limit only
+  blocks uploads; nothing is ever deleted automatically.
+
+  Returns `:ok` or `{:error, {:limit_reached, info}}`, where `info` also
+  has `:used`.
+  """
+  @spec check_storage(Scope.t(), non_neg_integer(), non_neg_integer()) ::
+          :ok | {:error, {:limit_reached, map()}}
+  def check_storage(%Scope{} = scope, used, adding) do
+    plan = plan(scope)
+
+    if used + adding <= plan.storage_bytes,
+      do: :ok,
+      else:
+        {:error,
+         {:limit_reached,
+          %{plan: plan, limit: plan.storage_bytes, resource: :storage, used: used}}}
+  end
+
+  @doc """
+  The account's storage, read fresh: `%{used: bytes, limit: bytes,
+  left: bytes}`.
+  """
+  def storage(%Scope{} = scope) do
+    account_id = Scope.account_id!(scope)
+    limit = plan(scope).storage_bytes
+
+    used =
+      Repo.one(
+        from(a in DueDesk.Tenancy.CustomerAccount,
+          where: a.id == ^account_id,
+          select: a.storage_used_bytes
+        )
+      ) || 0
+
+    %{used: used, limit: limit, left: max(limit - used, 0)}
+  end
+
   defp limit_for(plan, :organisation), do: plan.max_organisations
   defp limit_for(plan, :member), do: plan.max_members
   defp limit_for(plan, :due_item), do: plan.max_due_items
@@ -99,8 +139,8 @@ defmodule DueDesk.Billing do
   The message shown when a limit is reached. Super Admins are pointed to
   the plans; everyone else is asked to contact their Super Admin.
   """
-  def limit_message(%Scope{} = scope, %{plan: plan, limit: limit, resource: resource}) do
-    reached = "You have reached the #{plan.name} Plan limit of #{limit} #{noun(resource, limit)}."
+  def limit_message(%Scope{} = scope, %{plan: plan, limit: limit, resource: resource} = info) do
+    reached = reached(plan, limit, resource, info)
 
     if Permissions.can_manage_billing?(scope) do
       reached <> " Upgrade your plan to add more."
@@ -108,6 +148,18 @@ defmodule DueDesk.Billing do
       reached <> " Ask your Super Admin to upgrade the plan."
     end
   end
+
+  defp reached(plan, limit, :storage, info) do
+    left = max(limit - Map.get(info, :used, limit), 0)
+
+    if left == 0,
+      do: "You have reached the #{plan.name} Plan storage limit of #{Plans.format_bytes(limit)}.",
+      else:
+        "Not enough storage left: #{Plans.format_bytes(left)} of #{Plans.format_bytes(limit)} remaining."
+  end
+
+  defp reached(plan, limit, resource, _info),
+    do: "You have reached the #{plan.name} Plan limit of #{limit} #{noun(resource, limit)}."
 
   defp noun(:organisation, 1), do: "Organisation"
   defp noun(:organisation, _), do: "Organisations"

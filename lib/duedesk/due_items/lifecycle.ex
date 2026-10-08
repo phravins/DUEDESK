@@ -36,7 +36,7 @@ defmodule DueDesk.DueItems.Lifecycle do
 
   alias Ecto.Changeset
   alias Ecto.Multi
-  alias DueDesk.{Audit, DueItems, Permissions, Repo, Tenancy}
+  alias DueDesk.{Audit, Documents, DueItems, Permissions, Repo, Tenancy}
   alias DueDesk.Accounts.Scope
   alias DueDesk.DueItems.{Completion, Cycle, DueItem, Recurrence, ReminderRule}
 
@@ -85,10 +85,22 @@ defmodule DueDesk.DueItems.Lifecycle do
   Anyone who can see the DueItem may renew it while it is active. A
   renewal by a User is queued for an Administrator's review.
 
+  `uploads` (from `DueDesk.Documents.prepare_upload/2`) go on the new
+  cycle as its current documents, or, when no cycle starts yet, on the
+  closed cycle as completion documents. They are removed from storage
+  again if the renewal fails.
+
   Returns `{:ok, item}`, `{:error, changeset}`, `{:error, :stale}`,
-  `{:error, :not_recurring}` or `{:error, :unauthorized}`.
+  `{:error, {:limit_reached, info}}`, `{:error, :not_recurring}` or
+  `{:error, :unauthorized}`.
   """
-  def renew_due_item(%Scope{} = scope, %DueItem{} = item, attrs) do
+  def renew_due_item(%Scope{} = scope, %DueItem{} = item, attrs, uploads \\ []) do
+    scope
+    |> do_renew(item, attrs, uploads)
+    |> Documents.discard_on_error(uploads)
+  end
+
+  defp do_renew(scope, item, attrs, uploads) do
     with {:ok, fresh} <- actionable(scope, item),
          :ok <- if(Recurrence.recurring?(fresh), do: :ok, else: {:error, :not_recurring}),
          {:ok, completion} <- apply_completion(scope, fresh, attrs) do
@@ -122,6 +134,11 @@ defmodule DueDesk.DueItems.Lifecycle do
 
         Changeset.change(locked, [{:updated_at, DateTime.utc_now(:second)} | changes])
       end)
+      |> then(fn multi ->
+        if pending?,
+          do: Documents.multi_attach(multi, scope, fresh, & &1.closed, "completion", uploads),
+          else: Documents.multi_attach(multi, scope, fresh, & &1.cycle, "current", uploads)
+      end)
       |> Audit.multi_log(:audit, scope, "due_item.renewed", fresh,
         changes: fn %{locked: locked, cycle: cycle} ->
           %{"completed_on" => [nil, iso(completion.completed_on)]}
@@ -139,10 +156,20 @@ defmodule DueDesk.DueItems.Lifecycle do
   for an Administrator to archive it or re-date and reactivate it; until
   then Users no longer see it, but it still counts toward the plan.
 
+  `uploads` go on the closed cycle as completion documents, and are
+  removed from storage again if completing fails.
+
   Returns `{:ok, item}`, `{:error, changeset}`, `{:error, :stale}`,
-  `{:error, :recurring}` or `{:error, :unauthorized}`.
+  `{:error, {:limit_reached, info}}`, `{:error, :recurring}` or
+  `{:error, :unauthorized}`.
   """
-  def complete_due_item(%Scope{} = scope, %DueItem{} = item, attrs) do
+  def complete_due_item(%Scope{} = scope, %DueItem{} = item, attrs, uploads \\ []) do
+    scope
+    |> do_complete(item, attrs, uploads)
+    |> Documents.discard_on_error(uploads)
+  end
+
+  defp do_complete(scope, item, attrs, uploads) do
     with {:ok, fresh} <- actionable(scope, item),
          :ok <- if(Recurrence.recurring?(fresh), do: {:error, :recurring}, else: :ok),
          {:ok, completion} <- apply_completion(scope, fresh, attrs) do
@@ -157,6 +184,7 @@ defmodule DueDesk.DueItems.Lifecycle do
           updated_at: DateTime.utc_now(:second)
         )
       end)
+      |> Documents.multi_attach(scope, fresh, & &1.closed, "completion", uploads)
       |> Audit.multi_log(:audit, scope, "due_item.completed", fresh,
         changes: %{"completed_on" => [nil, iso(completion.completed_on)]}
       )
@@ -260,6 +288,8 @@ defmodule DueDesk.DueItems.Lifecycle do
       {:error, :locked, :stale, _} -> {:error, :stale}
       # Another request started the same cycle first.
       {:error, :cycle, %Changeset{}, _} -> {:error, :stale}
+      {:error, :storage_lock, :not_found, _} -> {:error, :unauthorized}
+      {:error, :storage_lock, reason, _} -> {:error, reason}
     end
   end
 
@@ -450,8 +480,10 @@ defmodule DueDesk.DueItems.Lifecycle do
 
   @doc """
   Permanently deletes an archived DueItem with its cycles, assignments,
-  reminders and notes. `confirmation` must be the DueItem's title. The
-  audit event keeps only the title. Super Admin only.
+  reminders, notes and documents. `confirmation` must be the DueItem's
+  title. The documents' storage is released in the same transaction and
+  their files are removed after it commits. The audit event keeps only
+  the title and the number of documents. Super Admin only.
 
   Returns `{:ok, item}`, `{:error, :not_archived}`,
   `{:error, :confirmation_mismatch}`, `{:error, :not_found}` or
@@ -469,14 +501,21 @@ defmodule DueDesk.DueItems.Lifecycle do
          :ok <- if(fresh.status == "archived", do: :ok, else: {:error, :not_archived}),
          :ok <- confirm_title(fresh, confirmation) do
       Multi.new()
+      |> Documents.multi_release(fresh)
       |> Multi.delete(:item, fresh, stale_error_field: :id)
       |> Audit.multi_log(:audit, scope, "due_item.deleted", fresh,
-        metadata: %{"title" => fresh.title}
+        metadata: fn %{released_documents: released} ->
+          %{"title" => fresh.title, "documents" => released.count}
+        end
       )
       |> Repo.transaction()
       |> case do
-        {:ok, %{item: item}} -> {:ok, item}
-        {:error, :item, _changeset, _} -> {:error, :not_found}
+        {:ok, %{item: item, released_documents: released}} ->
+          Documents.remove_objects(released.keys)
+          {:ok, item}
+
+        {:error, :item, _changeset, _} ->
+          {:error, :not_found}
       end
     end
   end

@@ -4,12 +4,16 @@ defmodule DueDeskWeb.DueItemLive.Complete do
   leaves Users' lists and waits for an Administrator to archive it or
   re-date and reactivate it.
 
+  Documents added here are proof of completion, kept on the closed cycle.
+
   Anyone who can see the DueItem may complete it while it is active; the
   context checks the same.
   """
   use DueDeskWeb, :live_view
 
-  alias DueDesk.{DueItems, Permissions}
+  import DueDeskWeb.DocumentComponents
+
+  alias DueDesk.{Billing, DueItems, Permissions}
   alias DueDesk.DueItems.Recurrence
 
   @not_available "This DueItem is not available to your account access."
@@ -56,10 +60,14 @@ defmodule DueDeskWeb.DueItemLive.Complete do
               />
             </.card>
 
-            <div class="flex items-start gap-2.5 rounded-lg border border-dashed border-zinc-300 px-4 py-3 text-sm text-zinc-500">
-              <.icon name="hero-paper-clip" class="mt-px size-5 shrink-0 text-zinc-400" />
-              <span>Attaching documents to a completion arrives in an upcoming release.</span>
-            </div>
+            <.card id="completion-documents" title="Documents">
+              <:subtitle>Proof of completion. Optional.</:subtitle>
+              <.document_dropzone
+                upload={@uploads.documents}
+                storage={@storage}
+                error={@upload_error}
+              />
+            </.card>
 
             <div class="flex flex-wrap items-center gap-2 pt-1">
               <.button id="save-completion" phx-disable-with="Saving…">
@@ -87,6 +95,8 @@ defmodule DueDeskWeb.DueItemLive.Complete do
          socket
          |> assign(:page_title, "Complete #{item.title}")
          |> assign(:item, item)
+         |> assign(:upload_error, nil)
+         |> allow_documents()
          |> assign(:form, to_form(DueItems.change_completion(scope, item)))}
       end
     else
@@ -98,13 +108,30 @@ defmodule DueDeskWeb.DueItemLive.Complete do
   def handle_event("validate", %{"completion" => params}, socket) do
     %{current_scope: scope, item: item} = socket.assigns
     changeset = DueItems.change_completion(scope, item, params)
-    {:noreply, assign(socket, :form, to_form(changeset, action: :validate))}
+    socket = assign(socket, :form, to_form(changeset, action: :validate))
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
+  end
+
+  def handle_event("validate", _params, socket) do
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
+  end
+
+  def handle_event("cancel_upload", %{"ref" => ref}, socket) do
+    socket = cancel_document(socket, ref)
+    {:noreply, assign(socket, :upload_error, selection_error(socket))}
   end
 
   def handle_event("save", %{"completion" => params}, socket) do
+    case prepare_documents(socket, params) do
+      {:ok, uploads} -> complete(socket, params, uploads)
+      {:error, socket} -> {:noreply, socket}
+    end
+  end
+
+  defp complete(socket, params, uploads) do
     %{current_scope: scope, item: item} = socket.assigns
 
-    case DueItems.complete_due_item(scope, item, params) do
+    case DueItems.complete_due_item(scope, item, params, uploads) do
       {:ok, completed} ->
         to =
           if Permissions.can_manage_due_items?(scope),
@@ -116,6 +143,12 @@ defmodule DueDeskWeb.DueItemLive.Complete do
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :form, to_form(changeset, action: :validate))}
 
+      {:error, {:limit_reached, info}} ->
+        {:noreply,
+         socket
+         |> refresh_storage()
+         |> assign(:upload_error, Billing.limit_message(scope, info))}
+
       {:error, :stale} ->
         {:noreply,
          socket
@@ -124,6 +157,28 @@ defmodule DueDeskWeb.DueItemLive.Complete do
 
       {:error, _} ->
         {:noreply, not_available(socket)}
+    end
+  end
+
+  # Validates the form first, so a mistake there keeps the selected files;
+  # then checks and stores the files. Returns `{:ok, uploads}` or the
+  # socket to render.
+  defp prepare_documents(socket, params) do
+    %{current_scope: scope, item: item} = socket.assigns
+    changeset = DueItems.change_completion(scope, item, params)
+
+    cond do
+      not changeset.valid? ->
+        {:error, assign(socket, :form, to_form(changeset, action: :validate))}
+
+      message = selection_error(socket) ->
+        {:error, assign(socket, :upload_error, message)}
+
+      true ->
+        case consume_documents(socket) do
+          {:ok, uploads} -> {:ok, uploads}
+          {:error, message} -> {:error, assign(socket, :upload_error, message)}
+        end
     end
   end
 

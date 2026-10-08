@@ -18,6 +18,25 @@ defmodule DueDesk.Release do
     {:ok, _, _} = Ecto.Migrator.with_repo(repo, &Ecto.Migrator.run(&1, :down, to: version))
   end
 
+  @doc """
+  Recomputes every account's stored-document bytes from its documents
+  and corrects counters that drifted. Run with
+  `bin/duedesk eval "DueDesk.Release.reconcile_storage()"`.
+  """
+  def reconcile_storage do
+    load_app()
+
+    {:ok, _, _} =
+      Ecto.Migrator.with_repo(DueDesk.Repo, fn repo ->
+        import Ecto.Query
+
+        repo.all(from(a in DueDesk.Tenancy.CustomerAccount, select: a.id))
+        |> Enum.each(&DueDesk.Documents.reconcile_storage/1)
+      end)
+
+    :ok
+  end
+
   defp repos do
     Application.fetch_env!(@app, :ecto_repos)
   end

@@ -304,6 +304,32 @@ defmodule DueDeskWeb.UserAuth do
     end
   end
 
+  @doc """
+  Plug for controller routes that need the Customer Account and role in
+  `current_scope`, like the `:require_account` on_mount. Runs after
+  `require_authenticated_user/2`.
+  """
+  def require_account(conn, _opts) do
+    scope = conn.assigns.current_scope
+
+    case Tenancy.get_current_membership(scope.user) do
+      nil ->
+        conn |> redirect(to: ~p"/onboarding/account") |> halt()
+
+      membership ->
+        scope = Scope.put_membership(scope, membership)
+
+        if scope.customer_account.status == "active" do
+          assign(conn, :current_scope, scope)
+        else
+          conn
+          |> put_flash(:error, @account_unavailable)
+          |> redirect(to: ~p"/")
+          |> halt()
+        end
+    end
+  end
+
   defp maybe_store_return_to(%{method: "GET"} = conn) do
     put_session(conn, :user_return_to, current_path(conn))
   end

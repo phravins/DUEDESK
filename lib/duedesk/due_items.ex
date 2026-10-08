@@ -753,8 +753,8 @@ defmodule DueDesk.DueItems do
   ## Lifecycle
 
   defdelegate change_completion(scope, item, attrs \\ %{}), to: Lifecycle
-  defdelegate renew_due_item(scope, item, attrs), to: Lifecycle
-  defdelegate complete_due_item(scope, item, attrs), to: Lifecycle
+  defdelegate renew_due_item(scope, item, attrs, uploads \\ []), to: Lifecycle
+  defdelegate complete_due_item(scope, item, attrs, uploads \\ []), to: Lifecycle
   defdelegate prepare_reactivate(item), to: Lifecycle
   defdelegate change_reactivation(scope, item, attrs \\ %{}), to: Lifecycle
   defdelegate reactivate_due_item(scope, item, attrs), to: Lifecycle

@@ -17,6 +17,14 @@ config :elixir, :time_zone_database, Tz.TimeZoneDatabase
 
 config :duedesk, :mail_from, {"DueDesk", "no-reply@duedesk.in"}
 
+# Documents are stored on local disk in development (uploads/, ignored by
+# git). Production uses an S3 or R2 bucket, set in config/runtime.exs.
+config :duedesk, DueDesk.Documents.Storage,
+  adapter: DueDesk.Documents.Storage.Local,
+  root: Path.expand("../uploads", __DIR__)
+
+config :duedesk, :document_max_file_size, 30 * 1024 * 1024
+
 config :duedesk,
   namespace: DueDesk,
   ecto_repos: [DueDesk.Repo],

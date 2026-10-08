@@ -80,6 +80,32 @@ defmodule DueDesk.Permissions do
 
   def can_act_on_due_item?(_scope, _item), do: false
 
+  @doc """
+  Whether the scope may upload documents to `item`: the same rule as
+  renewing or completing it. Archived DueItems are read-only.
+  """
+  def can_upload_document?(scope, item), do: can_act_on_due_item?(scope, item)
+
+  @doc """
+  Whether the scope may remove `document` from `item`: Administrators and
+  Super Admins who can see the DueItem, or the person who uploaded it
+  while its cycle is still open and they can act on the DueItem. Needs
+  the document's cycle preloaded.
+  """
+  def can_delete_document?(scope, item, document) do
+    cond do
+      not can_view_due_item?(scope, item) -> false
+      document.due_item_id != item.id -> false
+      admin?(scope) -> true
+      true -> uploader_of_open?(scope, item, document)
+    end
+  end
+
+  defp uploader_of_open?(%Scope{user: user} = scope, item, document) do
+    document.uploaded_by_user_id == user.id and is_nil(document.cycle.completed_at) and
+      can_act_on_due_item?(scope, item)
+  end
+
   @doc "Permanently deleting an archived DueItem. Super Admin only."
   def can_delete_due_item?(scope), do: super_admin?(scope)
 

@@ -35,14 +35,15 @@ defmodule DueDesk.Audit do
   @doc """
   Adds an audit insert to `multi` under `name`.
 
-  `subject` may be a struct, `nil`, or a 1-arity function receiving the
-  multi's changes so far and returning the subject.
+  `subject`, `:changes`, `:metadata` and `:customer_account_id` may each
+  be a 1-arity function receiving the multi's changes so far.
   """
   def multi_log(%Multi{} = multi, name, actor, action, subject, opts \\ []) do
     Multi.insert(multi, name, fn changes ->
       subject = if is_function(subject, 1), do: subject.(changes), else: subject
       opts = Keyword.update(opts, :changes, %{}, &resolve(&1, changes))
       opts = Keyword.update(opts, :customer_account_id, nil, &resolve(&1, changes))
+      opts = Keyword.update(opts, :metadata, %{}, &resolve(&1, changes))
       build(actor, action, subject, opts)
     end)
   end
