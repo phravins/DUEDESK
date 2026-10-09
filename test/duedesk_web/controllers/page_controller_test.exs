@@ -15,4 +15,14 @@ defmodule DueDeskWeb.PageControllerTest do
   test "GET /pricing no longer exists", %{conn: conn} do
     assert conn |> get("/pricing") |> response(404)
   end
+
+  test "GET /terms and /privacy are public", %{conn: conn} do
+    terms = conn |> get(~p"/terms") |> html_response(200)
+    assert terms =~ ~s(id="terms")
+    assert terms =~ ~s(href="/privacy")
+
+    privacy = build_conn() |> get(~p"/privacy") |> html_response(200)
+    assert privacy =~ ~s(id="privacy")
+    assert privacy =~ ~s(href="/terms")
+  end
 end

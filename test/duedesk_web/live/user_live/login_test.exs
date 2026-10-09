@@ -12,6 +12,13 @@ defmodule DueDeskWeb.UserLive.LoginTest do
       assert html =~ "Create an account"
       assert html =~ "Forgot password?"
     end
+
+    test "links the terms and privacy policy", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/log-in")
+
+      assert has_element?(lv, "#legal-consent a[href='/terms']", "terms of service")
+      assert has_element?(lv, "#legal-consent a[href='/privacy']", "privacy policy")
+    end
   end
 
   describe "user login" do

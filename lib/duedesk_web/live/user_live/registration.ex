@@ -14,8 +14,6 @@ defmodule DueDeskWeb.UserLive.Registration do
           Open it to verify your email address, then log in to set up your account.
         </.auth_heading>
 
-        <.dev_mailbox_notice />
-
         <.button navigate={~p"/users/log-in"} size="lg" class="w-full">
           Go to log in
         </.button>
@@ -82,9 +80,7 @@ defmodule DueDeskWeb.UserLive.Registration do
         </.button>
       </.form>
 
-      <p class="mt-8 text-xs leading-relaxed text-zinc-400">
-        By creating an account, you agree to the DueDesk terms of service and privacy policy.
-      </p>
+      <.legal_consent action="By creating an account" />
     </Layouts.auth>
     """
   end

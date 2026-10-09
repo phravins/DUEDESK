@@ -4,6 +4,7 @@ defmodule DueDeskWeb.UIComponents do
   cards, meters, empty states, limit notices and the auth page heading.
   """
   use Phoenix.Component
+  use DueDeskWeb, :verified_routes
 
   import DueDeskWeb.CoreComponents, only: [icon: 1]
 
@@ -454,18 +455,30 @@ defmodule DueDeskWeb.UIComponents do
   end
 
   @doc """
-  In development, points to the local mailbox where emails are delivered.
+  The consent line under the sign-up, log-in and invitation forms, with
+  links to the terms of service and privacy policy (opened in a new tab so
+  a half-filled form is kept).
+
+      <.legal_consent action="By continuing" />
   """
-  def dev_mailbox_notice(assigns) do
+  attr :action, :string, required: true
+
+  def legal_consent(assigns) do
     ~H"""
-    <p
-      :if={Application.get_env(:duedesk, DueDesk.Mailer)[:adapter] == Swoosh.Adapters.Local}
-      class="mb-6 flex items-center gap-2 rounded-md bg-brand-soft px-3 py-2 text-xs text-brand"
-    >
-      <.icon name="hero-beaker-mini" class="size-4" /> Development: emails arrive in
-      <a href="/dev/mailbox" target="_blank" class="font-semibold underline underline-offset-2">
-        the local mailbox
-      </a>
+    <p id="legal-consent" class="mt-8 text-xs leading-relaxed text-zinc-500">
+      {@action}, you agree to the DueDesk
+      <.link
+        href={~p"/terms"}
+        target="_blank"
+        rel="noopener"
+        class="font-medium text-zinc-700 underline underline-offset-2 transition hover:text-brand"
+      >terms of service</.link>
+      and <.link
+        href={~p"/privacy"}
+        target="_blank"
+        rel="noopener"
+        class="font-medium text-zinc-700 underline underline-offset-2 transition hover:text-brand"
+      >privacy policy</.link>.
     </p>
     """
   end

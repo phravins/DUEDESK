@@ -26,6 +26,8 @@ defmodule DueDeskWeb.Router do
     pipe_through :browser
 
     get "/", PageController, :home
+    get "/terms", PageController, :terms
+    get "/privacy", PageController, :privacy
   end
 
   if Application.compile_env(:duedesk, :dev_routes) do

@@ -138,9 +138,7 @@ defmodule DueDeskWeb.InvitationLive do
                 Join {@invitation.customer_account.name}
               </.button>
             </.form>
-            <p class="mt-8 text-xs leading-relaxed text-zinc-400">
-              By joining, you agree to the DueDesk terms of service and privacy policy.
-            </p>
+            <.legal_consent action="By joining" />
           </div>
       <% end %>
     </Layouts.auth>

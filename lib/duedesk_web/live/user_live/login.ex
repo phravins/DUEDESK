@@ -20,8 +20,6 @@ defmodule DueDeskWeb.UserLive.Login do
         <.auth_heading title="Know what is due." tagline="Log in to DueDesk." />
       <% end %>
 
-      <.dev_mailbox_notice />
-
       <.form
         :let={f}
         for={@form}
@@ -86,9 +84,7 @@ defmodule DueDeskWeb.UserLive.Login do
         Create an account
       </.button>
 
-      <p :if={!@current_scope} class="mt-8 text-xs leading-relaxed text-zinc-400">
-        By continuing, you agree to the DueDesk terms of service and privacy policy.
-      </p>
+      <.legal_consent :if={!@current_scope} action="By continuing" />
     </Layouts.auth>
     """
   end

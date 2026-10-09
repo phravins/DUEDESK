@@ -45,6 +45,7 @@ defmodule DueDeskWeb.Layouts do
   attr :flash, :map, required: true
   attr :current_scope, :map, default: nil
   attr :wide, :boolean, default: false
+  attr :document, :boolean, default: false, doc: "a reading width for long text pages"
   slot :header_action, doc: "the prompt at the top right, e.g. a link to sign up"
   slot :inner_block, required: true
 
@@ -71,18 +72,17 @@ defmodule DueDeskWeb.Layouts do
       </header>
 
       <main class="flex flex-1 justify-center px-5 pb-16 pt-8 sm:pt-20">
-        <div class={["w-full", if(@wide, do: "max-w-[440px]", else: "max-w-[360px]")]}>
+        <div class={[
+          "w-full",
+          cond do
+            @document -> "max-w-[680px]"
+            @wide -> "max-w-[440px]"
+            true -> "max-w-[360px]"
+          end
+        ]}>
           {render_slot(@inner_block)}
         </div>
       </main>
-
-      <footer class="flex flex-col items-center justify-between gap-2 border-t border-line px-5 py-5 text-xs text-zinc-400 sm:flex-row sm:px-10">
-        <p>© {Date.utc_today().year} REALSME Solutions Pvt Ltd</p>
-        <p class="inline-flex items-center gap-1.5">
-          <.icon name="hero-lock-closed-mini" class="size-3.5" />
-          Your data stays private to your account
-        </p>
-      </footer>
     </div>
     <.flash_group flash={@flash} />
     """
